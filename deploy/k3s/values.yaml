@@ -1,0 +1,127 @@
+# k3s single-node deployment values override for Semaphore CE
+#
+# Usage:
+#   helm upgrade --install semaphore oci://ghcr.io/semaphoreio/semaphore \
+#     --version <CHART_VERSION> \
+#     --timeout 30m \
+#     -f deploy/k3s/values.yaml \
+#     --set global.domain.ip="<NODE_IP>" \
+#     --set global.domain.name="<YOUR_DOMAIN>" \
+#     --set global.rootUser.email="<ADMIN_EMAIL>" \
+#     --set global.rootUser.name="<ADMIN_NAME>" \
+#     --set-string ingress.ssl.crt="$(base64 < /path/to/fullchain.pem | tr -d '\n')" \
+#     --set-string ingress.ssl.key="$(base64 < /path/to/privkey.pem | tr -d '\n')"
+#
+# Prerequisites (must be run before helm install):
+#   kubectl apply -f https://app.getambassador.io/yaml/emissary/3.9.1/emissary-crds.yaml
+#   kubectl wait --timeout=90s --for=condition=available deployment emissary-apiext -n emissary-system
+#
+# Note: CRD version 3.9.1 was validated against Semaphore CE chart v1.5.0.
+# When upgrading the chart, verify the required CRD version in the
+# emissary-ingress subchart entry in helm-chart/Chart.yaml.in.
+#
+# Minimum node requirements: 8 vCPUs, 16 GB RAM, 50 GB disk
+#
+# Storage: k3s ships with the 'local-path' StorageClass as default.
+# All PVCs in this chart use ReadWriteOnce, which is fully compatible.
+# No storageClassName override is needed.
+
+global:
+  # Stated explicitly to guard against accidental EE deployments.
+  # CE does not include EE-only subcharts; setting edition=ee would cause
+  # stuck pods from missing images.
+  edition: "ce"
+
+  #
+  # Set these via --set flags or a separate secret-bearing values file.
+  # Do not commit credentials to version control.
+  #
+  domain:
+    ip: ""      # Required: public IP of the k3s node
+    name: ""    # Required: base domain (e.g. ci.example.com)
+
+  rootUser:
+    email: ""   # Required: admin email address
+    name: ""    # Required: admin display name
+
+  #
+  # Database: running locally inside the cluster (default).
+  # sharedBuffers reduced from the default 1024MB to 256MB for
+  # single-node resource-constrained environments. Increase if you
+  # have 32 GB+ RAM.
+  #
+  database:
+    local:
+      sharedBuffers: 256MB
+
+#
+# Ingress: use Traefik (bundled with k3s) as the external-facing ingress.
+#
+# Architecture on k3s:
+#   Internet → Traefik (port 443, TLS termination)
+#             → emissary-ingress ambassador service (port 8080, internal routing)
+#             → Semaphore microservices
+#
+# Both controllers coexist: Traefik handles the Kubernetes Ingress object,
+# emissary-ingress handles all internal routing via its CRDs (Listener, Host,
+# Mapping, AuthService). This is the documented and supported k3s topology.
+#
+ingress:
+  enabled: true
+
+  # Use Traefik (k3s default ingress controller) instead of GCE.
+  className: "traefik"
+
+  ssl:
+    enabled: true
+
+    # Use a custom TLS certificate (e.g. from Let's Encrypt / certbot).
+    # Supply crt and key via --set or a sealed secret — never commit them here.
+    type: "custom"
+    secretName: "tls-secret"
+    crt: ""   # base64-encoded full-chain PEM — set via --set ingress.ssl.crt=...
+    key: ""   # base64-encoded private key PEM  — set via --set ingress.ssl.key=...
+
+#
+# emissary-ingress subchart overrides.
+#
+# waitForApiext must remain false: the CRDs are pre-installed manually
+# (see Prerequisites above). If set to true the Helm install will hang
+# waiting for a deployment that the chart itself does not create on k3s.
+#
+# The ambassador service runs as NodePort (port 8080). Traefik forwards
+# inbound traffic to this service. Do not change the service type to
+# LoadBalancer — k3s does not provision cloud load balancers by default.
+#
+emissary-ingress:
+  # These name overrides are required. The Semaphore Ingress template
+  # (helm-chart/templates/ingress.yaml) hard-codes "ambassador" as the
+  # backend service name. Without these, emissary deploys under a
+  # release-name-prefixed name and every inbound request will 503.
+  nameOverride: ambassador
+  fullnameOverride: ambassador
+
+  replicaCount: 1
+  agent:
+    enabled: false
+  waitForApiext:
+    # Must remain false: emissary CRDs are pre-installed manually before
+    # helm install (see Prerequisites above). If set to true the Helm
+    # install will hang waiting for a deployment the chart does not create.
+    enabled: false
+  service:
+    # Service must be named "ambassador" for the Ingress backend to resolve.
+    nameOverride: "ambassador"
+    type: NodePort
+    ports:
+      - name: http
+        port: 8080
+        targetPort: 8080
+    # Null out the GCE-specific annotations from the parent chart defaults.
+    # Helm empty-map ({}) does not override a non-empty parent map; per-key
+    # null values are needed. The emissary service template renders nulls as
+    # empty strings, so these annotations still appear with no value — which
+    # is harmless on k3s (no GCE controller exists to act on them).
+    annotations:
+      cloud.google.com/backend-config: null
+      cloud.google.com/neg: null
