@@ -10,9 +10,6 @@ metadata:
   name: semaphore
   namespace: {{ .Release.Namespace }}
   annotations:
-    {{- if eq $className "traefik" }}
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    {{- end }}
     {{- if eq $className "gce" }}
     networking.gke.io/v1beta1.FrontendConfig: "http-redirect-proxy"
     kubernetes.io/ingress.class: gce

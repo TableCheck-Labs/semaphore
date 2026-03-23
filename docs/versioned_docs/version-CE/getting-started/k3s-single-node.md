@@ -11,9 +11,9 @@ Semaphore repository.
 ## Overview {#overview}
 
 The setup script automates the full installation sequence: it installs k3s (with Traefik
-ingress), Helm, the Emissary Ingress CRDs, and the Semaphore Helm chart in a single run.
-The k3s values override in `deploy/k3s/values.yaml` pre-configures the chart for
-single-node use so you don't have to supply low-level Helm flags.
+ingress), Helm, and the Semaphore Helm chart in a single run. The k3s values override in
+`deploy/k3s/values.yaml` pre-configures the chart for single-node use so you don't have to
+supply low-level Helm flags.
 
 This guide is the fastest path to a self-hosted Semaphore CE installation. It is suitable
 for small teams that want a simple, low-cost deployment without high availability or
@@ -21,27 +21,23 @@ horizontal scalability.
 
 ### Ingress architecture {#ingress-architecture}
 
-This deployment uses **two ingress controllers in tandem** — they are not alternatives:
+This deployment uses the **Traefik ingress controller bundled with k3s** as the sole
+ingress layer. Emissary-ingress is not used.
 
-| Controller | Role |
+| Component | Role |
 |---|---|
-| **Traefik** (k3s built-in) | Handles the Kubernetes `Ingress` object; terminates TLS on port 443; forwards all traffic to the Emissary ambassador service on port 8080 |
-| **Emissary-ingress (ambassador)** | Handles all internal L7 routing to Semaphore microservices via its own CRDs (`Mapping`, `Listener`, `Host`, `AuthService`) |
+| **Traefik** (k3s built-in) | Terminates TLS on port 443 and performs all L7 routing directly to Semaphore microservices via Traefik CRDs (`IngressRoute`, `Middleware`, `ServersTransport`) |
 
 ```
-Internet → Traefik (port 443, TLS termination)
-         → ambassador/emissary (port 8080, internal routing)
+Internet → Traefik (port 443, TLS termination + L7 routing)
          → Semaphore microservices
 ```
 
-The Emissary CRDs **cannot be skipped**, even though Traefik is already bundled with k3s.
-The Semaphore Helm chart hard-codes `ambassador` as the Ingress backend service and
-expresses all internal routing as Emissary `Mapping` resources. If the CRDs are absent,
-`helm install` will fail at API server validation before any pod starts.
-
-Replacing Emissary with Traefik-native routing would require replacing all `Mapping`,
-`Listener`, and `AuthService` resources in the chart with Traefik `IngressRoute` equivalents
-— a chart-level change, not a values override.
+The Helm chart ships Traefik-native `IngressRoute` resources that handle host-based and
+path-based routing, authentication forwarding (`ForwardAuth` middleware), path rewriting,
+and retries. These resources are rendered when `ingress.className` is set to `"traefik"`
+(the default in `deploy/k3s/values.yaml`). The Emissary-ingress subchart is explicitly
+disabled.
 
 :::info Self-hosted agents
 
@@ -64,6 +60,10 @@ agents depends on your expected concurrency.
   Helm chart (`ghcr.io`)
 - The Semaphore repository cloned to the machine — the script reads
   `deploy/k3s/values.yaml` from the same directory
+- **k3s v1.32+** is required — it ships Traefik v3, which provides the `IngressRoute`,
+  `Middleware`, and `ServersTransport` CRDs used by the Semaphore Helm chart. The setup
+  script defaults to `v1.32.13+k3s1`. No manual CRD installation is needed; Traefik CRDs
+  are bundled with k3s
 
 ### Networking
 
@@ -235,11 +235,10 @@ The `setup.sh` script performs the following steps automatically:
 
 1. Installs k3s in single-server mode (Traefik enabled for ingress)
 2. Installs Helm
-3. Pre-installs the Emissary Ingress CRDs
-4. Creates the `semaphore` namespace
-5. Base64-encodes your TLS certificate and key
-6. Runs `helm upgrade --install` using `deploy/k3s/values.yaml`
-7. Waits for all Semaphore pods to reach `Ready` state (up to five minutes), then prints
+3. Creates the `semaphore` namespace
+4. Base64-encodes your TLS certificate and key
+5. Runs `helm upgrade --install` using `deploy/k3s/values.yaml`
+6. Waits for all Semaphore pods to reach `Ready` state (up to five minutes), then prints
    a pod listing — exits non-zero immediately if any pod enters `CrashLoopBackOff`
 
 Pass TLS paths as environment variables to keep them out of your shell history, then run
@@ -319,7 +318,7 @@ The script accepts flags and equivalent environment variables. Flags take preced
 | `--cert FILE` | `SEMAPHORE_CERT` | Yes | Path to TLS full-chain PEM file |
 | `--key FILE` | `SEMAPHORE_KEY` | Yes | Path to TLS private-key PEM file |
 | `--chart-version VER` | `SEMAPHORE_CHART_VERSION` | No | Chart version to install (default: `v1.5.0`) |
-| `--k3s-version VER` | `SEMAPHORE_K3S_VERSION` | No | k3s version to install (default: `v1.31.4+k3s1`) |
+| `--k3s-version VER` | `SEMAPHORE_K3S_VERSION` | No | k3s version to install (default: `v1.32.13+k3s1`) |
 | `--helm-version VER` | `SEMAPHORE_HELM_VERSION` | No | Helm version to install (default: `v3.17.1`) |
 | `--namespace NS` | — | No | Kubernetes namespace (default: `semaphore`) |
 | `--release REL` | — | No | Helm release name (default: `semaphore`) |
@@ -387,7 +386,6 @@ the `READY` column:
 ```shell title="Check deployments"
 $ kubectl get deployments -n semaphore
 NAME                                   READY   UP-TO-DATE   AVAILABLE   AGE
-ambassador                             1/1     1            1           5m
 artifacthub-internal-grpc-api          1/1     1            1           5m
 auth                                   1/1     1            1           5m
 ...
@@ -456,17 +454,17 @@ kubectl logs -n semaphore -l app.kubernetes.io/name=bootstrapper
 
 ### TLS or ingress errors {#ts-ingress}
 
-Confirm that the Traefik ingress object was created and has the correct host rule:
+Confirm that the Traefik IngressRoute objects were created and have the correct host rules:
 
-```shell title="Check ingress"
-kubectl get ingress -n semaphore
-kubectl describe ingress semaphore -n semaphore
+```shell title="Check IngressRoutes"
+kubectl get ingressroute -n semaphore
+kubectl describe ingressroute semaphore-main -n semaphore
 ```
 
-Confirm that the Emissary ambassador service is running as `NodePort` on port 8080:
+Confirm that the Traefik middlewares (ForwardAuth, Retry, rewrite) are present:
 
-```shell title="Check ambassador service"
-kubectl get service ambassador -n semaphore
+```shell title="Check Traefik middlewares"
+kubectl get middleware -n semaphore
 ```
 
 ### k3s node not ready {#ts-node}
@@ -563,6 +561,33 @@ the setup script so Helm installs the new certificate into the cluster.
    certificate files are re-encoded and re-applied automatically
 
 </Steps>
+
+## Behavioral differences from Emissary-ingress {#behavioral-notes}
+
+If you are migrating from an older k3s deployment that used Emissary-ingress (ambassador)
+for L7 routing, be aware of two semantic differences in the Traefik-native routing layer:
+
+### Retry semantics
+
+Traefik's `Retry` middleware retries on **connection-level failures only** (e.g. TCP
+connect errors, connection resets). It does not retry on HTTP 5xx responses. In contrast,
+Emissary could be configured to retry on specific HTTP status codes such as 5xx.
+
+The Helm chart defines two Retry middlewares: `retry-connect-4` (4 attempts, 100 ms initial
+interval) and `retry-connect-3` (3 attempts, 100 ms initial interval). Both trigger only on
+network-level errors, not on application-level HTTP failures.
+
+### Timeout semantics
+
+Traefik uses `ServersTransport.responseHeaderTimeout` to control how long the proxy waits
+for the **first response header byte** from the upstream service. The Helm chart defines two
+`ServersTransport` resources: `timeout-30s` (30-second deadline) and `timeout-5s` (5-second
+deadline).
+
+This differs from Emissary's `timeout_ms`, which was an **end-to-end request timeout**
+covering the entire request/response cycle. A slow-streaming response that sends its first
+header byte within the deadline will not be interrupted by Traefik, whereas it could have
+been terminated by Emissary if the total transfer time exceeded `timeout_ms`.
 
 ## See also {#see-also}
 

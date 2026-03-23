@@ -487,7 +487,7 @@ fi
 section "Helm rendering tests (T-RENDER-*)"
 
 if ! $HAVE_DOCKER_IMAGE; then
-    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12; do
+    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18; do
         skip "${t}" "docker image 'semaphore-helm-test' not built (run 'make docker.build' in helm-chart/)"
     done
 else
@@ -500,7 +500,7 @@ else
     if [[ ${RENDER_EXIT} -ne 0 ]]; then
         fail "T-RENDER-01  helm template failed (exit ${RENDER_EXIT})"
         head -30 "${RENDER_TMPFILE}" | sed 's/^/             /'
-        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12; do
+        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18; do
             skip "${t}" "T-RENDER-01 failed — no rendered output to inspect"
         done
     else
@@ -595,6 +595,68 @@ else
             pass "T-RENDER-12  kind: ServersTransport present — per-backend timeout configuration active"
         else
             fail "T-RENDER-12  kind: ServersTransport not found — backend timeouts not configured"
+        fi
+
+        # T-RENDER-13: semaphore-hooks IngressRoute must NOT contain forwardauth middleware
+        # Verified by extracting only the semaphore-hooks IngressRoute block from the rendered YAML.
+        # The webhook endpoint is unauthenticated — forwardauth breaks all webhook deliveries.
+        HOOKS_INGRESSROUTE=$(awk '/name: semaphore-hooks/{found=1} found{print} /^---/{if(found && NR>1){exit}}' "${RENDER_TMPFILE}")
+        if echo "${HOOKS_INGRESSROUTE}" | grep -q 'semaphore-forwardauth'; then
+            fail "T-RENDER-13  semaphore-hooks IngressRoute contains semaphore-forwardauth — webhook endpoint must be unauthenticated"
+        else
+            pass "T-RENDER-13  semaphore-hooks IngressRoute does NOT have semaphore-forwardauth (webhook endpoint, no auth — correct)"
+        fi
+
+        # T-RENDER-14: storage IngressRoutes (minio-*) must NOT have forwardauth middleware.
+        # These routes are only rendered when global.artifacts/cache/logs.local.enabled=true.
+        # Since the k3s test render does not enable local storage, IngressRoutes for minio
+        # are not rendered — this checks that no minio-* Service name appears in any
+        # IngressRoute block in the rendered output with forwardauth attached.
+        STORAGE_ROUTES=$(grep -A5 'minio-artifacts\|minio-cache\|minio-logs' "${RENDER_TMPFILE}" | grep 'name:' || true)
+        # Verify that any minio IngressRoute route block does not have forwardauth.
+        # Since storage IngressRoutes are disabled in the default k3s render, this
+        # checks the template source directly as a static assertion.
+        if grep -q 'semaphore-forwardauth' helm-chart/templates/traefik/ingressroute-storage.yaml; then
+            fail "T-RENDER-14  ingressroute-storage.yaml contains semaphore-forwardauth — bypass_auth routes must not have auth middleware"
+        else
+            pass "T-RENDER-14  ingressroute-storage.yaml does NOT have semaphore-forwardauth (bypass_auth — correct)"
+        fi
+
+        # T-RENDER-15: id.* catch-all / route must NOT have forwardauth middleware.
+        # Check the source template directly — the catch-all route at the end of
+        # ingressroute-id.yaml must have no middlewares section (bypass_auth: true).
+        ID_CATCHALL=$(awk '/bypass_auth: no ForwardAuth/{found=1} found{print} /^    - match:/{if(found && NR>1){exit}}' helm-chart/templates/traefik/ingressroute-id.yaml)
+        if echo "${ID_CATCHALL}" | grep -q 'semaphore-forwardauth'; then
+            fail "T-RENDER-15  id.* catch-all route in ingressroute-id.yaml has semaphore-forwardauth — bypass_auth route, causes redirect loops"
+        else
+            pass "T-RENDER-15  id.* catch-all route does NOT have semaphore-forwardauth (bypass_auth — correct)"
+        fi
+
+        # T-RENDER-16: no Emissary API group (apiVersion: getambassador.io/...) in rendered YAML.
+        # Note: the helm dependency build step may print 'https://app.getambassador.io' to stderr
+        # (captured in the render output). We check for the apiVersion string specifically.
+        if grep -q 'apiVersion: getambassador.io/' "${RENDER_TMPFILE}"; then
+            fail "T-RENDER-16  'apiVersion: getambassador.io/' found in rendered output — Emissary resources leaking through guard"
+        else
+            pass "T-RENDER-16  no 'apiVersion: getambassador.io/' in rendered output (Emissary guard working)"
+        fi
+
+        # T-RENDER-17: at least 3 Middleware resources rendered
+        # Expected: semaphore-forwardauth + at least 2 retry middlewares for backend resilience.
+        MW_COUNT=$(grep -c 'kind: Middleware' "${RENDER_TMPFILE}" || true)
+        if [[ ${MW_COUNT} -ge 3 ]]; then
+            pass "T-RENDER-17  ${MW_COUNT} Middleware resources rendered (>= 3: forwardauth + retry middlewares)"
+        else
+            fail "T-RENDER-17  only ${MW_COUNT} Middleware resource(s) rendered — expected at least 3 (forwardauth + 2 retry)"
+        fi
+
+        # T-RENDER-18: at least 4 IngressRoute resources rendered
+        # Expected: main app, id (identity), hooks (webhooks), plus any storage/EE that rendered.
+        IR_COUNT=$(grep -c 'kind: IngressRoute' "${RENDER_TMPFILE}" || true)
+        if [[ ${IR_COUNT} -ge 4 ]]; then
+            pass "T-RENDER-18  ${IR_COUNT} IngressRoute resources rendered (>= 4: main, id, hooks, storage)"
+        else
+            fail "T-RENDER-18  only ${IR_COUNT} IngressRoute resource(s) rendered — expected at least 4"
         fi
     fi
 fi
