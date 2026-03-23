@@ -1,3 +1,4 @@
+{{- if ne .Values.ingress.className "traefik" }}
 apiVersion: getambassador.io/v3alpha1
 kind: Mapping
 metadata:
@@ -608,4 +609,5 @@ spec:
     retry_policy:
       retry_on: connect-failure
       num_retries: 3
+{{- end }}
 {{- end }}

@@ -1,0 +1,121 @@
+{{- if eq .Values.ingress.className "traefik" }}
+{{- $domainName := .Values.global.domain.name | required ".Values.global.domain.name is required." -}}
+{{- $ns := .Release.Namespace -}}
+{{- $ssl := .Values.ingress.ssl -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-id
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # /oidc — guard-id-http-api
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/oidc`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /blocked — guard-id-http-api
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/blocked`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /login — guard-id-http-api
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/login`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /logout — guard-id-http-api
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/logout`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /signup — guard-id-http-api
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/signup`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /github_app_manifest — guard-instance-config
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/github_app_manifest`)
+      kind: Rule
+      services:
+        - name: guard-instance-config
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /realms — keycloak
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/realms`)
+      kind: Rule
+      services:
+        - name: keycloak
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # /resources — keycloak
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/resources`)
+      kind: Rule
+      services:
+        - name: keycloak
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-3
+
+    # / — guard-id-http-api catch-all (bypass_auth: no ForwardAuth middleware)
+    - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+{{- end }}

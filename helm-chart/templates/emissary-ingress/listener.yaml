@@ -1,3 +1,4 @@
+{{- if ne .Values.ingress.className "traefik" }}
 apiVersion: getambassador.io/v3alpha1
 kind: Listener
 metadata:
@@ -23,3 +24,4 @@ spec:
     insecure:
       action: Redirect
       additionalPort: 8080
+{{- end }}

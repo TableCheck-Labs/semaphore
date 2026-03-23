@@ -1,0 +1,343 @@
+{{- if eq .Values.ingress.className "traefik" }}
+{{- $domainName := .Values.global.domain.name | required ".Values.global.domain.name is required." -}}
+{{- $ns := .Release.Namespace -}}
+{{- $ssl := .Values.ingress.ssl -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-main
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # /badges/ — badges service
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/badges/`)
+      kind: Rule
+      services:
+        - name: badges
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-4
+
+    # /oauth — guard-id-http-api (no timeout override, no retry — precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/oauth`)
+      kind: Rule
+      services:
+        - name: guard-id-http-api
+          namespace: {{ $ns }}
+          port: 80
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /hooks/ → hooks-receiver (strip /hooks prefix)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/hooks/`)
+      kind: Rule
+      services:
+        - name: hooks-receiver
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: strip-hooks
+        - name: retry-connect-4
+
+    # /api/v1/logs/ — loghub2-public-api (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1/logs/`)
+      kind: Rule
+      services:
+        - name: loghub2-public-api
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /api/v2/ → public-api (strip /api/v2 prefix, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v2/`)
+      kind: Rule
+      services:
+        - name: public-api
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: strip-api-v2
+
+    # /api/v1/self_hosted_agents/ — self-hosted-hub-public-api (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1/self_hosted_agents/`)
+      kind: Rule
+      services:
+        - name: self-hosted-hub-public-api
+          namespace: {{ $ns }}
+          port: 8000
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /api/v1alpha/pipelines → plumber-public /pipelines (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/pipelines`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-pipelines
+
+    # /api/v1alpha/deployment_targets → plumber-public /deployment_targets (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/deployment_targets`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-deployment-targets
+
+    # /api/v1alpha/yaml → plumber-public /yaml (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/yaml`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-yaml
+
+    # /api/v1alpha/plumber-workflows → plumber-public /workflows (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/plumber-workflows`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-workflows
+
+    # /api/v1alpha/promotions → plumber-public /promotions (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/promotions`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-promotions
+
+    # /api/v1alpha/schedules → plumber-public /schedules (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/schedules`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-schedules
+
+    # /api/v1alpha/tasks → plumber-public /tasks (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/tasks`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-tasks
+
+    # /api/v1alpha/self_hosted_agent_types → plumber-public (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/self_hosted_agent_types`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-self-hosted
+
+    # /api/v1alpha/agents → plumber-public /agents (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/agents`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-agents
+
+    # /api/v1alpha/troubleshoot → plumber-public (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/troubleshoot`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-troubleshoot
+
+    # /api/v1alpha/artifacts_retention_policies → plumber-public (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/artifacts_retention_policies`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-artifacts-retention
+
+    # /api/v1alpha/logs → plumber-public /logs (5s timeout, precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/logs`)
+      kind: Rule
+      services:
+        - name: plumber-public
+          namespace: {{ $ns }}
+          port: 4004
+          serversTransport: timeout-5s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: rewrite-plumber-logs
+
+    # /api/v1alpha/projects → projecthub-public (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/projects`)
+      kind: Rule
+      services:
+        - name: projecthub-public
+          namespace: {{ $ns }}
+          port: 4000
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /api/v1alpha/secrets → secrethub-http (precedence route, no explicit timeout)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/api/v1alpha/secrets`)
+      kind: Rule
+      services:
+        - name: secrethub-http
+          namespace: {{ $ns }}
+          port: 4000
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # public-api-gateway: regex for v1alpha workflows/dashboards/jobs/notifications,
+    # v1beta secrets, v1 artifacts, v1 project secrets (precedence route)
+    - match: Host(`{{ $domainName }}`) && PathRegexp(`^/api/(v1alpha/(workflows|dashboards|jobs|notifications)|v1beta/secrets|v1/(artifacts|(projects/[a-zA-Z0-9_-]+/secrets)))`)
+      kind: Rule
+      services:
+        - name: public-api-gateway
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /workflows/ — workflow-page
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/workflows/`)
+      kind: Rule
+      services:
+        - name: workflow-page
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-4
+
+    # /jobs/ — job-page
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/jobs/`)
+      kind: Rule
+      services:
+        - name: job-page
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-4
+
+    # POST /projects (exact path) — project-create
+    - match: Host(`{{ $domainName }}`) && Path(`/projects`) && Method(`POST`)
+      kind: Rule
+      services:
+        - name: project-create
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-4
+
+    {{- if eq .Values.global.edition "ee" }}
+    # /okta/auth — rbac-okta-saml-http-api (EE only)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/okta/auth`)
+      kind: Rule
+      services:
+        - name: rbac-okta-saml-http-api
+          namespace: {{ $ns }}
+          port: 4001
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /okta/scim/ — rbac-okta-scim-http-api (EE only)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/okta/scim/`)
+      kind: Rule
+      services:
+        - name: rbac-okta-scim-http-api
+          namespace: {{ $ns }}
+          port: 4002
+      middlewares:
+        - name: semaphore-forwardauth
+
+    # /.well-known/ — secrethub-openid-connect-http (EE only)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/.well-known/`)
+      kind: Rule
+      services:
+        - name: secrethub-openid-connect-http
+          namespace: {{ $ns }}
+          port: 5000
+      middlewares:
+        - name: semaphore-forwardauth
+    {{- end }}
+
+    # / — project-page catch-all (WebSocket support is automatic in Traefik v3)
+    - match: Host(`{{ $domainName }}`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: project-page
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: semaphore-forwardauth
+        - name: retry-connect-4
+{{- end }}

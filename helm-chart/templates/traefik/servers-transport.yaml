@@ -1,0 +1,17 @@
+{{- if eq .Values.ingress.className "traefik" }}
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: timeout-30s
+  namespace: {{ .Release.Namespace }}
+spec:
+  responseHeaderTimeout: 30s
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: timeout-5s
+  namespace: {{ .Release.Namespace }}
+spec:
+  responseHeaderTimeout: 5s
+{{- end }}

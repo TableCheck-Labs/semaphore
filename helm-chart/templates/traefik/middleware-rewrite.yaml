@@ -1,0 +1,155 @@
+{{- if eq .Values.ingress.className "traefik" }}
+# strip-hooks: removes /hooks prefix before forwarding to hooks-receiver
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-hooks
+  namespace: {{ .Release.Namespace }}
+spec:
+  stripPrefix:
+    prefixes:
+      - /hooks
+---
+# strip-api-v2: removes /api/v2 prefix before forwarding to public-api
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-api-v2
+  namespace: {{ .Release.Namespace }}
+spec:
+  stripPrefix:
+    prefixes:
+      - /api/v2
+---
+# rewrite-plumber-pipelines: /api/v1alpha/pipelines → /pipelines
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-pipelines
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/pipelines(.*)"
+    replacement: "/pipelines$1"
+---
+# rewrite-plumber-deployment-targets: /api/v1alpha/deployment_targets → /deployment_targets
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-deployment-targets
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/deployment_targets(.*)"
+    replacement: "/deployment_targets$1"
+---
+# rewrite-plumber-yaml: /api/v1alpha/yaml → /yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-yaml
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/yaml(.*)"
+    replacement: "/yaml$1"
+---
+# rewrite-plumber-workflows: /api/v1alpha/plumber-workflows → /workflows
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-workflows
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/plumber-workflows(.*)"
+    replacement: "/workflows$1"
+---
+# rewrite-plumber-promotions: /api/v1alpha/promotions → /promotions
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-promotions
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/promotions(.*)"
+    replacement: "/promotions$1"
+---
+# rewrite-plumber-schedules: /api/v1alpha/schedules → /schedules
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-schedules
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/schedules(.*)"
+    replacement: "/schedules$1"
+---
+# rewrite-plumber-tasks: /api/v1alpha/tasks → /tasks
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-tasks
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/tasks(.*)"
+    replacement: "/tasks$1"
+---
+# rewrite-plumber-self-hosted: /api/v1alpha/self_hosted_agent_types → /self_hosted_agent_types
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-self-hosted
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/self_hosted_agent_types(.*)"
+    replacement: "/self_hosted_agent_types$1"
+---
+# rewrite-plumber-agents: /api/v1alpha/agents → /agents
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-agents
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/agents(.*)"
+    replacement: "/agents$1"
+---
+# rewrite-plumber-troubleshoot: /api/v1alpha/troubleshoot → /troubleshoot
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-troubleshoot
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/troubleshoot(.*)"
+    replacement: "/troubleshoot$1"
+---
+# rewrite-plumber-artifacts-retention: /api/v1alpha/artifacts_retention_policies → /artifacts_retention_policies
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-artifacts-retention
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/artifacts_retention_policies(.*)"
+    replacement: "/artifacts_retention_policies$1"
+---
+# rewrite-plumber-logs: /api/v1alpha/logs → /logs
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rewrite-plumber-logs
+  namespace: {{ .Release.Namespace }}
+spec:
+  replacePathRegex:
+    regex: "^/api/v1alpha/logs(.*)"
+    replacement: "/logs$1"
+{{- end }}

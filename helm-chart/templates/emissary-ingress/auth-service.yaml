@@ -1,3 +1,4 @@
+{{- if ne .Values.ingress.className "traefik" }}
 apiVersion: getambassador.io/v3alpha1
 kind: AuthService
 metadata:
@@ -18,3 +19,4 @@ spec:
   - "x-semaphore-user-id"
   - "x-semaphore-user-anonymous"
   - "set-cookie"
+{{- end }}

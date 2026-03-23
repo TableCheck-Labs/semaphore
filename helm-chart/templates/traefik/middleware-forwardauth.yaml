@@ -1,0 +1,20 @@
+{{- if eq .Values.ingress.className "traefik" }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: semaphore-forwardauth
+  namespace: {{ .Release.Namespace }}
+spec:
+  forwardAuth:
+    address: "http://auth.{{ .Release.Namespace }}:4000/exauth"
+    authRequestHeaders:
+      - x-canary-mode
+    authResponseHeaders:
+      - x-semaphore-org-id
+      - x-semaphore-org-username
+      - x-semaphore-user-id
+      - x-semaphore-user-anonymous
+      - set-cookie
+    trustForwardHeader: true
+    requestTimeout: 5s
+{{- end }}

@@ -1,0 +1,82 @@
+{{- if eq .Values.ingress.className "traefik" }}
+{{- $domainName := .Values.global.domain.name | required ".Values.global.domain.name is required." -}}
+{{- $ns := .Release.Namespace -}}
+{{- $ssl := .Values.ingress.ssl -}}
+{{- if .Values.global.artifacts.local.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-artifacts
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # artifacts.* / — minio-artifacts (bypass_auth: no ForwardAuth)
+    - match: Host(`artifacts.{{ $domainName }}`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: minio-artifacts
+          namespace: {{ $ns }}
+          port: 9000
+          serversTransport: timeout-30s
+      middlewares:
+        - name: retry-connect-3
+{{- end }}
+{{- if .Values.global.cache.local.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-cache
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # cache.* / — minio-cache (bypass_auth: no ForwardAuth)
+    - match: Host(`cache.{{ $domainName }}`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: minio-cache
+          namespace: {{ $ns }}
+          port: 9000
+          serversTransport: timeout-30s
+      middlewares:
+        - name: retry-connect-3
+{{- end }}
+{{- if .Values.global.logs.local.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-logs-storage
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # logs.* / — minio-logs (bypass_auth: no ForwardAuth)
+    - match: Host(`logs.{{ $domainName }}`) && PathPrefix(`/`)
+      kind: Rule
+      services:
+        - name: minio-logs
+          namespace: {{ $ns }}
+          port: 9000
+          serversTransport: timeout-30s
+      middlewares:
+        - name: retry-connect-3
+{{- end }}
+{{- end }}

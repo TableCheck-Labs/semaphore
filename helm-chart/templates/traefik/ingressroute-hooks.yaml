@@ -1,0 +1,28 @@
+{{- if eq .Values.ingress.className "traefik" }}
+{{- $domainName := .Values.global.domain.name | required ".Values.global.domain.name is required." -}}
+{{- $ns := .Release.Namespace -}}
+{{- $ssl := .Values.ingress.ssl -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: semaphore-hooks
+  namespace: {{ $ns }}
+spec:
+  entryPoints:
+    - websecure
+{{- if and $ssl.enabled (eq $ssl.type "custom") }}
+  tls:
+    secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
+{{- end }}
+  routes:
+    # /github — github-hooks (no ForwardAuth — webhook endpoint)
+    - match: Host(`hooks.{{ $domainName }}`) && PathPrefix(`/github`)
+      kind: Rule
+      services:
+        - name: github-hooks
+          namespace: {{ $ns }}
+          port: 80
+          serversTransport: timeout-30s
+      middlewares:
+        - name: retry-connect-4
+{{- end }}

@@ -514,11 +514,11 @@ else
     else
         pass "T-RENDER-01  helm template exits 0 with required --set flags"
 
-        # T-RENDER-02: ingressClassName is traefik
-        if grep -q 'ingressClassName: traefik' "${RENDER_TMPFILE}"; then
-            pass "T-RENDER-02  rendered Ingress has ingressClassName: traefik"
+        # T-RENDER-02: IngressRoute resources rendered (traefik-native routing, no Kubernetes Ingress)
+        if grep -q 'kind: IngressRoute' "${RENDER_TMPFILE}"; then
+            pass "T-RENDER-02  kind: IngressRoute present — Traefik-native routing active"
         else
-            fail "T-RENDER-02  rendered Ingress missing 'ingressClassName: traefik'"
+            fail "T-RENDER-02  kind: IngressRoute not found — Traefik routing templates may be missing"
         fi
 
         # T-RENDER-03: no GCE FrontendConfig resource
@@ -549,11 +549,11 @@ else
             pass "T-RENDER-06  no EE-only Mappings in CE rendered output"
         fi
 
-        # T-RENDER-07: traefik annotation on Ingress
-        if grep -q 'traefik.ingress.kubernetes.io/router.entrypoints: websecure' "${RENDER_TMPFILE}"; then
-            pass "T-RENDER-07  Traefik entrypoints annotation present in rendered Ingress"
+        # T-RENDER-07: websecure entrypoint declared in IngressRoute
+        if grep -qe '- websecure' "${RENDER_TMPFILE}"; then
+            pass "T-RENDER-07  websecure entrypoint present in rendered IngressRoute"
         else
-            fail "T-RENDER-07  Traefik entrypoints annotation missing from rendered Ingress"
+            fail "T-RENDER-07  websecure entrypoint missing from rendered IngressRoute"
         fi
 
         # T-RENDER-08: helm template fails when global.domain.name is absent
