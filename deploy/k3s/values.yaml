@@ -52,16 +52,15 @@ global:
       sharedBuffers: 256MB
 
 #
-# Ingress: use Traefik (bundled with k3s) as the external-facing ingress.
+# Ingress: Traefik (bundled with k3s) handles TLS termination and all L7 routing.
 #
 # Architecture on k3s:
-#   Internet → Traefik (port 443, TLS termination)
-#             → emissary-ingress ambassador service (port 8080, internal routing)
+#   Internet → Traefik (port 443, TLS + L7 routing via IngressRoute CRDs)
 #             → Semaphore microservices
 #
-# Both controllers coexist: Traefik handles the Kubernetes Ingress object,
-# emissary-ingress handles all internal routing via its CRDs (Listener, Host,
-# Mapping, AuthService). This is the documented and supported k3s topology.
+# Traefik-native CRDs (IngressRoute, Middleware, ServersTransport) are rendered
+# when ingress.className is "traefik". The emissary-ingress subchart is disabled.
+# No Emissary CRDs or ambassador service are needed.
 #
 ingress:
   enabled: true
