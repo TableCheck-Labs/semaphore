@@ -122,11 +122,11 @@ else
     fail "T-VALUES-03  global.edition is '${val}', expected 'ce'"
 fi
 
-# T-VALUES-04: waitForApiext.enabled must be false
-if grep -A5 'waitForApiext:' "${VALUES_FILE}" | grep -qE 'enabled:\s+false'; then
-    pass "T-VALUES-04  emissary-ingress.waitForApiext.enabled is false"
+# T-VALUES-04: emissary-ingress.enabled must be false (k3s uses Traefik-native routing)
+if grep -A2 '^emissary-ingress:' "${VALUES_FILE}" | grep -qE 'enabled:\s+false'; then
+    pass "T-VALUES-04  emissary-ingress.enabled is false — subchart disabled for k3s"
 else
-    fail "T-VALUES-04  emissary-ingress.waitForApiext.enabled is not false — helm install will hang on k3s"
+    fail "T-VALUES-04  emissary-ingress.enabled is not false — emissary subchart will be installed on k3s (wastes ~400MB RAM)"
 fi
 
 # T-VALUES-05: skipTlsVerifyInternal must NOT be true (security regression)
@@ -165,32 +165,28 @@ else
     fail "T-VALUES-07b global.domain.name has literal value '${name_val}' — should be empty placeholder"
 fi
 
-# T-VALUES-08: ambassador service GCE annotations nulled out via per-key nulls.
-# Helm empty-map ({}) does not override a non-empty parent map, so per-key
-# null values are used instead. Check for both known GCE annotation keys.
-if grep -q 'cloud.google.com/backend-config: null' "${VALUES_FILE}" && \
-   grep -q 'cloud.google.com/neg: null' "${VALUES_FILE}"; then
-    pass "T-VALUES-08  emissary-ingress service GCE annotations are nulled out (per-key nulls)"
+# T-VALUES-08: no full emissary-ingress config block needed — subchart is disabled.
+# Only emissary-ingress.enabled: false should appear in k3s values.yaml.
+if ! grep -q 'nameOverride: ambassador' "${VALUES_FILE}" && \
+   ! grep -q 'fullnameOverride: ambassador' "${VALUES_FILE}"; then
+    pass "T-VALUES-08  no emissary ambassador name overrides in k3s values (subchart disabled)"
 else
-    fail "T-VALUES-08  emissary-ingress service GCE annotations not cleared — cloud.google.com annotations may persist on k3s"
+    fail "T-VALUES-08  stale emissary ambassador name overrides found in k3s values — remove them"
 fi
 
-# T-VALUES-09: nameOverride and fullnameOverride both set to ambassador
-# CRITICAL: ingress.yaml hard-codes the backend service name as "ambassador".
-# Without these overrides the emissary deployment uses the Helm release-prefixed
-# name and every inbound request returns 503.
-if grep -qE 'nameOverride:\s+ambassador' "${VALUES_FILE}" && \
-   grep -qE 'fullnameOverride:\s+ambassador' "${VALUES_FILE}"; then
-    pass "T-VALUES-09  emissary-ingress nameOverride and fullnameOverride are both 'ambassador'"
+# T-VALUES-09: no emissary-specific NodePort service config needed in k3s values
+if ! grep -q 'type: NodePort' "${VALUES_FILE}"; then
+    pass "T-VALUES-09  no emissary NodePort service config in k3s values (subchart disabled)"
 else
-    fail "T-VALUES-09  missing nameOverride or fullnameOverride = ambassador — ingress backend will 503"
+    fail "T-VALUES-09  stale emissary NodePort service config found in k3s values — remove it"
 fi
 
-# T-VALUES-10: emissary service.nameOverride also set to ambassador
-if grep -A20 'service:' "${VALUES_FILE}" | grep -qE 'nameOverride:\s+"ambassador"'; then
-    pass "T-VALUES-10  emissary-ingress service.nameOverride is 'ambassador'"
+# T-VALUES-10: no GCE annotation nulls needed in k3s values (subchart disabled)
+if ! grep -q 'cloud.google.com/backend-config: null' "${VALUES_FILE}" && \
+   ! grep -q 'cloud.google.com/neg: null' "${VALUES_FILE}"; then
+    pass "T-VALUES-10  no GCE annotation nulls in k3s values (emissary subchart disabled)"
 else
-    fail "T-VALUES-10  emissary-ingress service.nameOverride not 'ambassador' — service name mismatch with ingress backend"
+    fail "T-VALUES-10  stale GCE annotation nulls found in k3s values — remove them"
 fi
 
 # T-VALUES-11: telemetry endpoint not pointing to a test server
@@ -353,11 +349,11 @@ else
     fail "T-SCRIPT-14  helm upgrade missing --wait — install returns before pods are ready; post-install steps run prematurely"
 fi
 
-# T-SCRIPT-15: emissary CRD wait uses -n emissary-system (not default namespace)
-if grep -q 'emissary-system' "${SETUP_SCRIPT}"; then
-    pass "T-SCRIPT-15  kubectl wait for emissary-apiext targets -n emissary-system"
+# T-SCRIPT-15: no emissary CRD pre-install step in setup script (traefik-native, no CRD pre-install needed)
+if ! grep -q 'emissary' "${SETUP_SCRIPT}"; then
+    pass "T-SCRIPT-15  no emissary references in setup script (Traefik-native routing, no CRD pre-install)"
 else
-    fail "T-SCRIPT-15  kubectl wait for emissary-apiext missing '-n emissary-system' — waits in wrong namespace"
+    fail "T-SCRIPT-15  emissary references found in setup script — remove emissary CRD pre-install steps"
 fi
 
 # T-SCRIPT-16: --set-string used for TLS cert and key (prevents Helm type coercion)
@@ -476,17 +472,13 @@ else
     fail "T-CROSS-05a values.yaml usage comment uses bare --set for TLS certs, but script uses --set-string — operator copy-paste will silently risk type coercion"
 fi
 
-# T-CROSS-05b: emissary CRD URL version consistent across values.yaml comment and setup.sh
-values_crd_url=$(grep -oE 'emissary/[0-9]+\.[0-9]+\.[0-9]+/emissary-crds' "${VALUES_FILE}" | head -1 || true)
-script_crd_url=$(grep -oE 'emissary/[0-9]+\.[0-9]+\.[0-9]+/emissary-crds' "${SETUP_SCRIPT}" | head -1 || true)
-if [[ -n "${values_crd_url}" ]] && [[ -n "${script_crd_url}" ]]; then
-    if [[ "${values_crd_url}" == "${script_crd_url}" ]]; then
-        pass "T-CROSS-05  emissary CRD URL version is consistent (${values_crd_url})"
-    else
-        fail "T-CROSS-05  emissary CRD URL version mismatch: values.yaml uses '${values_crd_url}', script uses '${script_crd_url}'"
-    fi
+# T-CROSS-05b: no emissary CRD URL in values.yaml or setup.sh (pre-install step removed)
+values_has_emissary_crd=$(grep -c 'emissary-crds' "${VALUES_FILE}" || true)
+script_has_emissary_crd=$(grep -c 'emissary-crds' "${SETUP_SCRIPT}" || true)
+if [[ "${values_has_emissary_crd}" -eq 0 ]] && [[ "${script_has_emissary_crd}" -eq 0 ]]; then
+    pass "T-CROSS-05  no emissary CRD URLs in values.yaml or setup.sh (pre-install step removed)"
 else
-    skip "T-CROSS-05" "could not extract emissary CRD version from one or both files"
+    fail "T-CROSS-05  stale emissary CRD URL found in values.yaml or setup.sh — remove emissary-crds references"
 fi
 
 # ---------------------------------------------------------------------------
@@ -495,7 +487,7 @@ fi
 section "Helm rendering tests (T-RENDER-*)"
 
 if ! $HAVE_DOCKER_IMAGE; then
-    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07; do
+    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12; do
         skip "${t}" "docker image 'semaphore-helm-test' not built (run 'make docker.build' in helm-chart/)"
     done
 else
@@ -508,7 +500,7 @@ else
     if [[ ${RENDER_EXIT} -ne 0 ]]; then
         fail "T-RENDER-01  helm template failed (exit ${RENDER_EXIT})"
         head -30 "${RENDER_TMPFILE}" | sed 's/^/             /'
-        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07; do
+        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12; do
             skip "${t}" "T-RENDER-01 failed — no rendered output to inspect"
         done
     else
@@ -542,11 +534,11 @@ else
             fail "T-RENDER-05  TLS Secret not rendered — ingress.ssl.type=custom should produce it"
         fi
 
-        # T-RENDER-06: no EE-only Mappings (edition=ce)
-        if grep -qE 'rbac-okta-saml-http-api|rbac-okta-scim-http-api|secrethub-openid-mapping' "${RENDER_TMPFILE}"; then
-            fail "T-RENDER-06  EE-only Mappings present in CE render — global.edition may not be 'ce'"
+        # T-RENDER-06: no EE-only routes (edition=ce) — check IngressRoute service names
+        if grep -qE 'rbac-okta-saml-http-api|rbac-okta-scim-http-api|secrethub-openid-connect-http' "${RENDER_TMPFILE}"; then
+            fail "T-RENDER-06  EE-only routes present in CE render — global.edition may not be 'ce'"
         else
-            pass "T-RENDER-06  no EE-only Mappings in CE rendered output"
+            pass "T-RENDER-06  no EE-only routes in CE rendered output"
         fi
 
         # T-RENDER-07: websecure entrypoint declared in IngressRoute
@@ -575,6 +567,34 @@ else
             fail "T-RENDER-08  helm template failed without domain but error message unclear: $(echo "${NO_DOMAIN_OUTPUT}" | head -5)"
         else
             fail "T-RENDER-08  helm template succeeded without global.domain.name — required guard not working"
+        fi
+
+        # T-RENDER-09: ForwardAuth middleware rendered (replaces Emissary AuthService)
+        if grep -q 'kind: Middleware' "${RENDER_TMPFILE}" && grep -q 'forwardAuth:' "${RENDER_TMPFILE}"; then
+            pass "T-RENDER-09  kind: Middleware with forwardAuth present — AuthService replaced"
+        else
+            fail "T-RENDER-09  ForwardAuth Middleware not found — authentication will not work"
+        fi
+
+        # T-RENDER-10: no Emissary resources rendered (Mapping, AuthService, Listener, Host)
+        if grep -qE '^kind: (Mapping|AuthService|Listener|Host)$' "${RENDER_TMPFILE}"; then
+            fail "T-RENDER-10  Emissary resources (Mapping/AuthService/Listener/Host) present in k3s render — guard is broken"
+        else
+            pass "T-RENDER-10  no Emissary resources in k3s render (Mapping/AuthService/Listener/Host absent)"
+        fi
+
+        # T-RENDER-11: no Kubernetes Ingress rendered (routing is fully via IngressRoute)
+        if grep -qE '^kind: Ingress$' "${RENDER_TMPFILE}"; then
+            fail "T-RENDER-11  kind: Ingress present — traefik mode should use IngressRoute, not Ingress"
+        else
+            pass "T-RENDER-11  no kind: Ingress in k3s render (routing fully via IngressRoute)"
+        fi
+
+        # T-RENDER-12: ServersTransport resources rendered (replaces Emissary timeout_ms)
+        if grep -q 'kind: ServersTransport' "${RENDER_TMPFILE}"; then
+            pass "T-RENDER-12  kind: ServersTransport present — per-backend timeout configuration active"
+        else
+            fail "T-RENDER-12  kind: ServersTransport not found — backend timeouts not configured"
         fi
     fi
 fi

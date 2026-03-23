@@ -33,9 +33,8 @@
 # What this script does:
 #   1. Installs k3s in single-server mode (Traefik kept enabled for ingress)
 #   2. Installs Helm if not already present
-#   3. Pre-installs emissary-ingress CRDs (required before the Helm chart)
-#   4. Runs `helm upgrade --install` using deploy/k3s/values.yaml
-#   5. Waits for all Semaphore pods to become Ready, then lists all pods
+#   3. Runs `helm upgrade --install` using deploy/k3s/values.yaml
+#   4. Waits for all Semaphore pods to become Ready, then lists all pods
 #
 # Examples:
 #   # Minimal — pass secrets as env vars to avoid shell history exposure:
@@ -69,7 +68,6 @@ K3S_INSTALL_URL="https://get.k3s.io"
 # Helm installer is fetched at a pinned tag to ensure reproducibility.
 # Update DEFAULT_HELM_VERSION when upgrading Helm.
 HELM_INSTALL_URL="https://raw.githubusercontent.com/helm/helm/v3.17.1/scripts/get-helm-3"
-EMISSARY_CRD_URL="https://app.getambassador.io/yaml/emissary/3.9.1/emissary-crds.yaml"
 SEMAPHORE_CHART_OCI="oci://ghcr.io/semaphoreio/semaphore"
 
 DEFAULT_CHART_VERSION="v1.5.0"
@@ -215,28 +213,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3 — Pre-install emissary-ingress CRDs
-#
-# The CRDs must exist before the Helm chart is applied because the chart
-# creates emissary resources (Listener, Host, Mapping) during install.
-# The emissary-ingress subchart has waitForApiext.enabled=false, so Helm will
-# not wait for the apiext deployment — we do that here instead.
-# This step is idempotent: `kubectl apply` is a no-op if the CRDs are current.
-# ---------------------------------------------------------------------------
-log_info "Applying emissary-ingress CRDs..."
-kubectl apply -f "${EMISSARY_CRD_URL}"
-
-log_info "Waiting for emissary-apiext deployment to become available..."
-kubectl wait \
-  --timeout=90s \
-  --for=condition=available \
-  deployment emissary-apiext \
-  -n emissary-system
-
-log_info "emissary-ingress CRDs are ready."
-
-# ---------------------------------------------------------------------------
-# Step 4 — Ensure the target namespace exists (idempotent)
+# Step 3 — Ensure the target namespace exists (idempotent)
 # ---------------------------------------------------------------------------
 log_info "Ensuring namespace '${NAMESPACE}' exists..."
 if kubectl get namespace "${NAMESPACE}" &>/dev/null; then
@@ -247,7 +224,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5 — Base64-encode TLS certificate and key
+# Step 4 — Base64-encode TLS certificate and key
 # ---------------------------------------------------------------------------
 log_info "Encoding TLS certificate and key..."
 # tr -d '\n' strips the line breaks that both GNU and BSD base64 insert,
@@ -256,7 +233,7 @@ TLS_CRT="$(base64 < "${CERT_FILE}" | tr -d '\n')"
 TLS_KEY="$(base64 < "${KEY_FILE}"  | tr -d '\n')"
 
 # ---------------------------------------------------------------------------
-# Step 6 — Install or upgrade Semaphore CE via Helm (idempotent)
+# Step 5 — Install or upgrade Semaphore CE via Helm (idempotent)
 # ---------------------------------------------------------------------------
 log_info "Deploying Semaphore CE..."
 log_info "  Release       : ${RELEASE}"
@@ -268,8 +245,6 @@ log_info "  Admin email   : ${EMAIL}"
 log_info "  Admin name    : ${ADMIN_NAME}"
 log_info "  Values file   : ${VALUES_FILE}"
 
-# emissary-ingress overrides (nameOverride, fullnameOverride, service NodePort/8080)
-# are fully specified in values.yaml and are not repeated here via --set.
 helm upgrade --install "${RELEASE}" "${SEMAPHORE_CHART_OCI}" \
   --version "${CHART_VERSION}" \
   --namespace "${NAMESPACE}" \
@@ -286,7 +261,7 @@ helm upgrade --install "${RELEASE}" "${SEMAPHORE_CHART_OCI}" \
 log_info "Helm upgrade/install completed successfully."
 
 # ---------------------------------------------------------------------------
-# Step 7 — Post-install verification
+# Step 6 — Post-install verification
 # ---------------------------------------------------------------------------
 log_info "Waiting for Semaphore pods to become Ready (up to 5 min)..."
 # Wait for all pods labelled product=semaphoreci to be Ready. This is a
