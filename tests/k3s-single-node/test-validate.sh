@@ -105,9 +105,9 @@ else
 fi
 
 # T-VALUES-02: ingress.ssl.type must be "custom"
-# Note: there are two 'type:' lines (ssl type and service type); we want the ssl one.
-# The ssl type appears before the NodePort service type in the file, so head -1 is safe.
-val=$(grep -E '^\s+type:' "${VALUES_FILE}" | head -1 | sed 's/.*:[ ]*//' | tr -d '"')
+# Use awk range to scope to the ssl: sub-section under ingress: — avoids matching
+# unrelated 'type:' keys elsewhere in the file (fragility fix).
+val=$(awk '/^[[:space:]]+ssl:/{in_ssl=1} in_ssl && /^[[:space:]]+type:/{gsub(/.*:[[:space:]]*/,""); gsub(/"/,""); print; exit} in_ssl && /^[a-z]/{exit}' "${VALUES_FILE}" | tr -d '"')
 if [[ "${val}" == "custom" ]]; then
     pass "T-VALUES-02  ingress.ssl.type is 'custom'"
 else
@@ -641,22 +641,27 @@ else
             pass "T-RENDER-16  no 'apiVersion: getambassador.io/' in rendered output (Emissary guard working)"
         fi
 
-        # T-RENDER-17: at least 3 Middleware resources rendered
-        # Expected: semaphore-forwardauth + at least 2 retry middlewares for backend resilience.
+        # T-RENDER-17: at least 15 Middleware resources rendered
+        # CE render produces 17: 1 forwardauth + 2 retry + 2 stripPrefix + 12 replacePathRegex.
+        # Threshold of 15 catches accidental deletion of rewrite middlewares while allowing
+        # minor future additions without breaking the test.
         MW_COUNT=$(grep -c 'kind: Middleware' "${RENDER_TMPFILE}" || true)
-        if [[ ${MW_COUNT} -ge 3 ]]; then
-            pass "T-RENDER-17  ${MW_COUNT} Middleware resources rendered (>= 3: forwardauth + retry middlewares)"
+        if [[ ${MW_COUNT} -ge 15 ]]; then
+            pass "T-RENDER-17  ${MW_COUNT} Middleware resources rendered (>= 15: forwardauth + retry + rewrite set)"
         else
-            fail "T-RENDER-17  only ${MW_COUNT} Middleware resource(s) rendered — expected at least 3 (forwardauth + 2 retry)"
+            fail "T-RENDER-17  only ${MW_COUNT} Middleware resource(s) rendered — expected at least 15 (forwardauth + retry + all rewrite middlewares)"
         fi
 
-        # T-RENDER-18: at least 4 IngressRoute resources rendered
-        # Expected: main app, id (identity), hooks (webhooks), plus any storage/EE that rendered.
+        # T-RENDER-18: at least 6 IngressRoute resources rendered
+        # CE render (with chart-default local storage enabled) produces 6:
+        #   semaphore-main, semaphore-id, semaphore-hooks,
+        #   semaphore-artifacts, semaphore-cache, semaphore-logs-storage.
+        # Threshold of 6 ensures core routes AND storage routes are all present.
         IR_COUNT=$(grep -c 'kind: IngressRoute' "${RENDER_TMPFILE}" || true)
-        if [[ ${IR_COUNT} -ge 4 ]]; then
-            pass "T-RENDER-18  ${IR_COUNT} IngressRoute resources rendered (>= 4: main, id, hooks, storage)"
+        if [[ ${IR_COUNT} -ge 6 ]]; then
+            pass "T-RENDER-18  ${IR_COUNT} IngressRoute resources rendered (>= 6: main, id, hooks, storage)"
         else
-            fail "T-RENDER-18  only ${IR_COUNT} IngressRoute resource(s) rendered — expected at least 4"
+            fail "T-RENDER-18  only ${IR_COUNT} IngressRoute resource(s) rendered — expected at least 6 (main + id + hooks + 3 storage)"
         fi
     fi
 fi
