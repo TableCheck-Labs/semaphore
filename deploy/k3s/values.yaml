@@ -16,9 +16,8 @@
 #   kubectl apply -f https://app.getambassador.io/yaml/emissary/3.9.1/emissary-crds.yaml
 #   kubectl wait --timeout=90s --for=condition=available deployment emissary-apiext -n emissary-system
 #
-# Note: CRD version 3.9.1 was validated against Semaphore CE chart v1.5.0.
-# When upgrading the chart, verify the required CRD version in the
-# emissary-ingress subchart entry in helm-chart/Chart.yaml.in.
+# Note: k3s v1.32+ ships Traefik v3 (required for stable IngressRoute traefik.io/v1alpha1
+# CRD group and Gateway API v1.1.0+). Validated against Semaphore CE chart v1.5.0.
 #
 # Minimum node requirements: 8 vCPUs, 16 GB RAM, 50 GB disk
 #

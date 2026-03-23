@@ -70,7 +70,13 @@ echo "  values file : ${VALUES_FILE}"
 echo "  setup script: ${SETUP_SCRIPT}"
 
 HAVE_SHELLCHECK=true
-command -v shellcheck &>/dev/null || { echo "  WARN: shellcheck not found — T-SCRIPT-07 will be skipped"; HAVE_SHELLCHECK=false; }
+SHELLCHECK_CMD="shellcheck"
+if command -v mise &>/dev/null && mise exec shellcheck@0.11 -- shellcheck --version &>/dev/null 2>&1; then
+    SHELLCHECK_CMD="mise exec shellcheck@0.11 -- shellcheck"
+elif ! command -v shellcheck &>/dev/null; then
+    echo "  WARN: shellcheck not found — T-SCRIPT-07 will be skipped"
+    HAVE_SHELLCHECK=false
+fi
 
 HAVE_DOCKER=true
 command -v docker &>/dev/null || { echo "  WARN: docker not found — helm rendering tests will be skipped"; HAVE_DOCKER=false; }
@@ -264,7 +270,7 @@ done
 if ! $HAVE_SHELLCHECK; then
     skip "T-SCRIPT-07" "shellcheck not available"
 else
-    sc_output="$(shellcheck "${SETUP_SCRIPT}" 2>&1)" && sc_exit=0 || sc_exit=$?
+    sc_output="$(${SHELLCHECK_CMD} "${SETUP_SCRIPT}" 2>&1)" && sc_exit=0 || sc_exit=$?
     if [[ ${sc_exit} -eq 0 ]]; then
         pass "T-SCRIPT-07  shellcheck passes with no errors"
     else

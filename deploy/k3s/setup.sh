@@ -73,9 +73,10 @@ EMISSARY_CRD_URL="https://app.getambassador.io/yaml/emissary/3.9.1/emissary-crds
 SEMAPHORE_CHART_OCI="oci://ghcr.io/semaphoreio/semaphore"
 
 DEFAULT_CHART_VERSION="v1.5.0"
-# k3s v1.31.4+k3s1 validated with Semaphore CE chart v1.5.0 and emissary CRDs 3.9.1.
+# k3s v1.32.x ships Traefik v3 (replacing v2.11 in v1.31.x). This is required for
+# stable Gateway API support and Traefik IngressRoute v3 CRD group (traefik.io/v1alpha1).
 # Update when upgrading the Semaphore chart to a newer k3s-tested release.
-DEFAULT_K3S_VERSION="v1.31.4+k3s1"
+DEFAULT_K3S_VERSION="v1.32.13+k3s1"
 DEFAULT_HELM_VERSION="v3.17.1"
 DEFAULT_NAMESPACE="semaphore"
 DEFAULT_RELEASE="semaphore"
