@@ -100,8 +100,8 @@ fi
 
 # T-VALUES-02: ingress.ssl.type must be "custom"
 # Note: there are two 'type:' lines (ssl type and service type); we want the ssl one.
-# The ssl type appears before the NodePort service type in the file.
-val=$(awk '/^ingress:/,/^[a-z]/' "${VALUES_FILE}" | grep -E '^\s+type:' | head -1 | sed 's/.*:[ ]*//' | tr -d '"')
+# The ssl type appears before the NodePort service type in the file, so head -1 is safe.
+val=$(grep -E '^\s+type:' "${VALUES_FILE}" | head -1 | sed 's/.*:[ ]*//' | tr -d '"')
 if [[ "${val}" == "custom" ]]; then
     pass "T-VALUES-02  ingress.ssl.type is 'custom'"
 else
@@ -147,7 +147,7 @@ fi
 
 # T-VALUES-07: global.domain.ip and global.domain.name must be empty
 ip_val=$(grep -E '^\s+ip:' "${VALUES_FILE}" | head -1 | sed 's/.*ip:[ ]*//' | tr -d '"' | sed 's/#.*//' | xargs)
-name_val=$(awk '/^\s+domain:$/,/^\s+rootUser:/' "${VALUES_FILE}" | grep -E '^\s+name:' | head -1 | sed 's/.*name:[ ]*//' | tr -d '"' | sed 's/#.*//' | xargs)
+name_val=$(awk '/^[[:space:]]+domain:$/,/^[[:space:]]+rootUser:/' "${VALUES_FILE}" | grep -E '^\s+name:' | head -1 | sed 's/.*name:[ ]*//' | tr -d '"' | sed 's/#.*//' | xargs)
 if [[ -z "${ip_val}" ]]; then
     pass "T-VALUES-07a global.domain.ip is empty (set at install time — correct)"
 else
@@ -159,12 +159,14 @@ else
     fail "T-VALUES-07b global.domain.name has literal value '${name_val}' — should be empty placeholder"
 fi
 
-# T-VALUES-08: ambassador service annotations nulled out (no GCE annotations)
-# The override must set annotations: {} to clear the GCE default annotations
-if grep -qE 'annotations:\s*\{\}' "${VALUES_FILE}"; then
-    pass "T-VALUES-08  emissary-ingress service annotations are cleared (annotations: {})"
+# T-VALUES-08: ambassador service GCE annotations nulled out via per-key nulls.
+# Helm empty-map ({}) does not override a non-empty parent map, so per-key
+# null values are used instead. Check for both known GCE annotation keys.
+if grep -q 'cloud.google.com/backend-config: null' "${VALUES_FILE}" && \
+   grep -q 'cloud.google.com/neg: null' "${VALUES_FILE}"; then
+    pass "T-VALUES-08  emissary-ingress service GCE annotations are nulled out (per-key nulls)"
 else
-    fail "T-VALUES-08  emissary-ingress service annotations not cleared — GCE cloud.google.com annotations may persist"
+    fail "T-VALUES-08  emissary-ingress service GCE annotations not cleared — cloud.google.com annotations may persist on k3s"
 fi
 
 # T-VALUES-09: nameOverride and fullnameOverride both set to ambassador
@@ -193,8 +195,10 @@ else
 fi
 
 # T-VALUES-12: ingress.enabled is true
+# Use grep -A instead of awk range: the range /^ingress:/,/^[a-z]/ self-terminates
+# immediately because "ingress:" itself matches /^[a-z]/ on macOS awk (one-true-awk).
 if grep -qE '^ingress:' "${VALUES_FILE}" && \
-   awk '/^ingress:/,/^[a-z]/' "${VALUES_FILE}" | grep -qE '^\s+enabled:\s+true'; then
+   grep -A5 '^ingress:' "${VALUES_FILE}" | grep -qE '^\s+enabled:\s+true'; then
     pass "T-VALUES-12  ingress.enabled is true"
 else
     fail "T-VALUES-12  ingress.enabled is not true — ingress will not be created"
@@ -280,8 +284,10 @@ elif [[ ${base64_cert_count} -eq 0 ]]; then
 else
     pass "T-SCRIPT-08a ${base64_cert_count} base64 encoding(s) found"
 fi
-# No double-pipe: base64 | ... | base64
-if grep -qE 'base64.*\|.*base64' "${SETUP_SCRIPT}"; then
+# No double-pipe: base64 | ... | base64 in an actual encoding context.
+# Use $( as anchor to avoid matching the prerequisite check line which has
+# `|| die "base64 is not installed"` (contains base64 on both sides of |).
+if grep -qE '\$\(base64.*\|.*base64' "${SETUP_SCRIPT}"; then
     fail "T-SCRIPT-08b double base64 encoding detected — certs will be double-encoded, TLS will break"
 else
     pass "T-SCRIPT-08b no double base64 encoding"
@@ -302,8 +308,10 @@ else
     pass "T-SCRIPT-10  no bare 'helm install' — 'helm upgrade --install' used (idempotent)"
 fi
 
-# T-SCRIPT-11: --namespace flag present on the helm upgrade command
-if grep -qE 'helm upgrade.*--namespace\b|helm upgrade.*-n\b' "${SETUP_SCRIPT}"; then
+# T-SCRIPT-11: --namespace flag present on the helm upgrade command.
+# The flag may appear on a continuation line, so check for it within 10
+# lines of the helm upgrade invocation rather than on the same line.
+if grep -A10 'helm upgrade' "${SETUP_SCRIPT}" | grep -qE '^\s+--namespace\b'; then
     pass "T-SCRIPT-11  helm upgrade uses --namespace flag"
 else
     fail "T-SCRIPT-11  helm upgrade missing --namespace — installs into kubectl context default namespace"
@@ -486,10 +494,14 @@ if ! $HAVE_DOCKER_IMAGE; then
     done
 else
     RENDER_OUTPUT="$(helm_render 2>&1)" && RENDER_EXIT=0 || RENDER_EXIT=$?
+    # Write to a temp file: echo "${VAR}" can truncate on control characters emitted
+    # by helm dependency build; printf is safe and grep on a file is reliable.
+    RENDER_TMPFILE="$(mktemp)"
+    printf '%s\n' "${RENDER_OUTPUT}" > "${RENDER_TMPFILE}"
 
     if [[ ${RENDER_EXIT} -ne 0 ]]; then
         fail "T-RENDER-01  helm template failed (exit ${RENDER_EXIT})"
-        echo "${RENDER_OUTPUT}" | head -30 | sed 's/^/             /'
+        head -30 "${RENDER_TMPFILE}" | sed 's/^/             /'
         for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07; do
             skip "${t}" "T-RENDER-01 failed — no rendered output to inspect"
         done
@@ -497,42 +509,42 @@ else
         pass "T-RENDER-01  helm template exits 0 with required --set flags"
 
         # T-RENDER-02: ingressClassName is traefik
-        if echo "${RENDER_OUTPUT}" | grep -q 'ingressClassName: traefik'; then
+        if grep -q 'ingressClassName: traefik' "${RENDER_TMPFILE}"; then
             pass "T-RENDER-02  rendered Ingress has ingressClassName: traefik"
         else
             fail "T-RENDER-02  rendered Ingress missing 'ingressClassName: traefik'"
         fi
 
         # T-RENDER-03: no GCE FrontendConfig resource
-        if echo "${RENDER_OUTPUT}" | grep -q 'kind: FrontendConfig'; then
+        if grep -q 'kind: FrontendConfig' "${RENDER_TMPFILE}"; then
             fail "T-RENDER-03  rendered output contains 'kind: FrontendConfig' — GCE-only resource on k3s"
         else
             pass "T-RENDER-03  no GCE FrontendConfig rendered"
         fi
 
         # T-RENDER-04: no GCE BackendConfig resource
-        if echo "${RENDER_OUTPUT}" | grep -q 'kind: BackendConfig'; then
+        if grep -q 'kind: BackendConfig' "${RENDER_TMPFILE}"; then
             fail "T-RENDER-04  rendered output contains 'kind: BackendConfig' — GCE-only resource on k3s"
         else
             pass "T-RENDER-04  no GCE BackendConfig rendered"
         fi
 
         # T-RENDER-05: TLS Secret rendered (custom SSL path)
-        if echo "${RENDER_OUTPUT}" | grep -q 'type: kubernetes.io/tls'; then
+        if grep -q 'type: kubernetes.io/tls' "${RENDER_TMPFILE}"; then
             pass "T-RENDER-05  TLS Secret (type: kubernetes.io/tls) rendered"
         else
             fail "T-RENDER-05  TLS Secret not rendered — ingress.ssl.type=custom should produce it"
         fi
 
         # T-RENDER-06: no EE-only Mappings (edition=ce)
-        if echo "${RENDER_OUTPUT}" | grep -qE 'rbac-okta-saml-http-api|rbac-okta-scim-http-api|secrethub-openid-mapping'; then
+        if grep -qE 'rbac-okta-saml-http-api|rbac-okta-scim-http-api|secrethub-openid-mapping' "${RENDER_TMPFILE}"; then
             fail "T-RENDER-06  EE-only Mappings present in CE render — global.edition may not be 'ce'"
         else
             pass "T-RENDER-06  no EE-only Mappings in CE rendered output"
         fi
 
         # T-RENDER-07: traefik annotation on Ingress
-        if echo "${RENDER_OUTPUT}" | grep -q 'traefik.ingress.kubernetes.io/router.entrypoints: websecure'; then
+        if grep -q 'traefik.ingress.kubernetes.io/router.entrypoints: websecure' "${RENDER_TMPFILE}"; then
             pass "T-RENDER-07  Traefik entrypoints annotation present in rendered Ingress"
         else
             fail "T-RENDER-07  Traefik entrypoints annotation missing from rendered Ingress"

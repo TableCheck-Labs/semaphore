@@ -19,6 +19,30 @@ This guide is the fastest path to a self-hosted Semaphore CE installation. It is
 for small teams that want a simple, low-cost deployment without high availability or
 horizontal scalability.
 
+### Ingress architecture {#ingress-architecture}
+
+This deployment uses **two ingress controllers in tandem** — they are not alternatives:
+
+| Controller | Role |
+|---|---|
+| **Traefik** (k3s built-in) | Handles the Kubernetes `Ingress` object; terminates TLS on port 443; forwards all traffic to the Emissary ambassador service on port 8080 |
+| **Emissary-ingress (ambassador)** | Handles all internal L7 routing to Semaphore microservices via its own CRDs (`Mapping`, `Listener`, `Host`, `AuthService`) |
+
+```
+Internet → Traefik (port 443, TLS termination)
+         → ambassador/emissary (port 8080, internal routing)
+         → Semaphore microservices
+```
+
+The Emissary CRDs **cannot be skipped**, even though Traefik is already bundled with k3s.
+The Semaphore Helm chart hard-codes `ambassador` as the Ingress backend service and
+expresses all internal routing as Emissary `Mapping` resources. If the CRDs are absent,
+`helm install` will fail at API server validation before any pod starts.
+
+Replacing Emissary with Traefik-native routing would require replacing all `Mapping`,
+`Listener`, and `AuthService` resources in the chart with Traefik `IngressRoute` equivalents
+— a chart-level change, not a values override.
+
 :::info Self-hosted agents
 
 The control plane installed here runs your CI/CD pipelines but does not execute job
