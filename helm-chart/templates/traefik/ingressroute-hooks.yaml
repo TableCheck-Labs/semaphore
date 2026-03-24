@@ -24,5 +24,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: retry-connect-4
 {{- end }}

@@ -490,7 +490,7 @@ fi
 section "Helm rendering tests (T-RENDER-*)"
 
 if ! $HAVE_DOCKER_IMAGE; then
-    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18; do
+    for t in T-RENDER-01 T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18 T-RENDER-19; do
         skip "${t}" "docker image 'semaphore-helm-test' not built (run 'make docker.build' in helm-chart/)"
     done
 else
@@ -503,7 +503,7 @@ else
     if [[ ${RENDER_EXIT} -ne 0 ]]; then
         fail "T-RENDER-01  helm template failed (exit ${RENDER_EXIT})"
         head -30 "${RENDER_TMPFILE}" | sed 's/^/             /'
-        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18; do
+        for t in T-RENDER-02 T-RENDER-03 T-RENDER-04 T-RENDER-05 T-RENDER-06 T-RENDER-07 T-RENDER-08 T-RENDER-09 T-RENDER-10 T-RENDER-11 T-RENDER-12 T-RENDER-13 T-RENDER-14 T-RENDER-15 T-RENDER-16 T-RENDER-17 T-RENDER-18 T-RENDER-19; do
             skip "${t}" "T-RENDER-01 failed — no rendered output to inspect"
         done
     else
@@ -667,6 +667,27 @@ else
             pass "T-RENDER-18  ${IR_COUNT} IngressRoute resources rendered (>= 6: main, id, hooks, storage)"
         else
             fail "T-RENDER-18  only ${IR_COUNT} IngressRoute resource(s) rendered — expected at least 6 (main + id + hooks + 3 storage)"
+        fi
+
+        # T-RENDER-19: https-proto Middleware present, and every IngressRoute route includes it.
+        # Traefik connects to backends over HTTP internally; without an explicit
+        # X-Forwarded-Proto: https header, Plug.SSL in Elixir services redirects
+        # HTTP→HTTPS causing a tight loop. The https-proto middleware injects this header
+        # on every route so backends see the correct protocol.
+        if ! grep -q 'name: https-proto' "${RENDER_TMPFILE}"; then
+            fail "T-RENDER-19  https-proto Middleware not found — Plug.SSL backends will redirect in a loop (X-Forwarded-Proto missing)"
+        else
+            # Count IngressRoute routes (lines containing 'kind: Rule') vs those with https-proto
+            IR_ROUTES=$(grep -c 'kind: Rule' "${RENDER_TMPFILE}" || true)
+            HTTPS_PROTO_REFS=$(grep -c 'name: https-proto' "${RENDER_TMPFILE}" || true)
+            # One middleware def + one ref per route; refs must equal IR_ROUTES
+            # (the middleware itself adds 1 extra name: https-proto line)
+            HTTPS_PROTO_ROUTE_REFS=$(( HTTPS_PROTO_REFS - 1 ))
+            if [[ ${HTTPS_PROTO_ROUTE_REFS} -ge ${IR_ROUTES} ]]; then
+                pass "T-RENDER-19  https-proto Middleware present and referenced in all ${IR_ROUTES} IngressRoute routes"
+            else
+                fail "T-RENDER-19  https-proto present but only ${HTTPS_PROTO_ROUTE_REFS} route refs vs ${IR_ROUTES} routes — some routes missing X-Forwarded-Proto header"
+            fi
         fi
     fi
 fi

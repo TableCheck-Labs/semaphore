@@ -24,6 +24,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: retry-connect-4
 
@@ -35,6 +36,7 @@ spec:
           namespace: {{ $ns }}
           port: 80
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /hooks/ → hooks-receiver (strip /hooks prefix)
@@ -46,6 +48,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: strip-hooks
         - name: retry-connect-4
@@ -59,6 +62,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /api/v2/ → public-api (strip /api/v2 prefix, precedence route)
@@ -70,6 +74,7 @@ spec:
           port: 4004
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: strip-api-v2
 
@@ -82,6 +87,7 @@ spec:
           port: 8000
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /api/v1alpha/pipelines → plumber-public /pipelines (precedence route)
@@ -93,6 +99,7 @@ spec:
           port: 4004
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-pipelines
 
@@ -105,6 +112,7 @@ spec:
           port: 4004
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-deployment-targets
 
@@ -117,6 +125,7 @@ spec:
           port: 4004
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-yaml
 
@@ -129,6 +138,7 @@ spec:
           port: 4004
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-workflows
 
@@ -141,6 +151,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-promotions
 
@@ -153,6 +164,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-schedules
 
@@ -165,6 +177,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-tasks
 
@@ -177,6 +190,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-self-hosted
 
@@ -189,6 +203,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-agents
 
@@ -201,6 +216,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-troubleshoot
 
@@ -213,6 +229,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-artifacts-retention
 
@@ -225,6 +242,7 @@ spec:
           port: 4004
           serversTransport: timeout-5s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: rewrite-plumber-logs
 
@@ -237,6 +255,7 @@ spec:
           port: 4000
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /api/v1alpha/secrets → secrethub-http (precedence route, no explicit timeout)
@@ -247,6 +266,7 @@ spec:
           namespace: {{ $ns }}
           port: 4000
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # public-api-gateway: regex for v1alpha workflows/dashboards/jobs/notifications,
@@ -259,6 +279,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /workflows/ — workflow-page
@@ -270,6 +291,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: retry-connect-4
 
@@ -282,6 +304,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: retry-connect-4
 
@@ -294,6 +317,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: retry-connect-4
 
@@ -306,6 +330,7 @@ spec:
           namespace: {{ $ns }}
           port: 4001
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /okta/scim/ — rbac-okta-scim-http-api (EE only)
@@ -316,6 +341,7 @@ spec:
           namespace: {{ $ns }}
           port: 4002
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
 
     # /.well-known/ — secrethub-openid-connect-http (EE only)
@@ -326,6 +352,7 @@ spec:
           namespace: {{ $ns }}
           port: 5000
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
     {{- end }}
 
@@ -338,6 +365,7 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: semaphore-forwardauth
         - name: retry-connect-4
 {{- end }}

@@ -25,6 +25,7 @@ spec:
           port: 9000
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: retry-connect-3
 {{- end }}
 {{- if .Values.global.cache.local.enabled }}
@@ -51,6 +52,7 @@ spec:
           port: 9000
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: retry-connect-3
 {{- end }}
 {{- if .Values.global.logs.local.enabled }}
@@ -77,6 +79,7 @@ spec:
           port: 9000
           serversTransport: timeout-30s
       middlewares:
+        - name: https-proto
         - name: retry-connect-3
 {{- end }}
 {{- end }}
