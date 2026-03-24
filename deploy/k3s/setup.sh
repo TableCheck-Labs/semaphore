@@ -276,19 +276,20 @@ if [[ -n "${CHART_PATH}" ]]; then
 
   # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
   # emissary-ingress dependency so that setting enabled: false in k3s values
-  # disables the subchart.  The awk is idempotent — it only inserts the
-  # condition line when it is not already present for that dependency.
+  # disables the subchart.  The awk is indentation-agnostic (captures the
+  # actual leading whitespace from the repository: line so it works regardless
+  # of how yq reformatted the file) and idempotent (skips if already present).
   awk '
-    /^  - name: emissary-ingress/ { in_dep=1; has_cond=0 }
-    in_dep && /^    condition:/ { has_cond=1 }
-    in_dep && /^    repository:/ {
-      print
-      if (!has_cond) print "    condition: emissary-ingress.enabled"
-      in_dep=0
-      next
+    /- name:[[:space:]]+emissary-ingress/ { in_dep=1; has_cond=0; dep_indent=""; print; next }
+    in_dep && dep_indent=="" { match($0, /^[[:space:]]*/); dep_indent=substr($0, 1, RLENGTH) }
+    in_dep && /condition:/ { has_cond=1 }
+    in_dep && /- name:/ {
+      if (!has_cond) print dep_indent "condition: emissary-ingress.enabled"
+      in_dep=0; print; next
     }
-    in_dep && /^  - / { in_dep=0 }
+    in_dep { print; next }
     { print }
+    END { if (in_dep && !has_cond && dep_indent!="") print dep_indent "condition: emissary-ingress.enabled" }
   ' "${CHART_BASE}/Chart.yaml" > "${CHART_BASE}/Chart.yaml.tmp"
   mv "${CHART_BASE}/Chart.yaml.tmp" "${CHART_BASE}/Chart.yaml"
 
