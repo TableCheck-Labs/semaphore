@@ -305,8 +305,10 @@ fi
 # build those objects even if the new templates no longer emit them, causing:
 #   "unable to build kubernetes objects from release manifest: no matches for kind X"
 # Uninstall the stale release first so the next run starts from a clean slate.
+# grep exits 1 (no match) when there is no existing release; || true prevents
+# that from aborting the script under set -eo pipefail.
 HELM_STATUS="$(helm status "${RELEASE}" -n "${NAMESPACE}" -o json 2>/dev/null \
-  | grep -o '"status":"[^"]*"' | head -1 | sed 's/"status":"//;s/"//')"
+  | grep -o '"status":"[^"]*"' | head -1 | sed 's/"status":"//;s/"//' || true)"
 if [[ "${HELM_STATUS}" == failed || "${HELM_STATUS}" == pending* ]]; then
   log_warn "Found a ${HELM_STATUS} Helm release '${RELEASE}' — uninstalling stale release before fresh install..."
   helm uninstall "${RELEASE}" -n "${NAMESPACE}" || true
@@ -318,8 +320,10 @@ log_info "  Admin email   : ${EMAIL}"
 log_info "  Admin name    : ${ADMIN_NAME}"
 log_info "  Values file   : ${VALUES_FILE}"
 
+# ${HELM_VERSION_FLAG[@]+...} guard: bash treats an empty array as unset under
+# set -u; the parameter expansion only expands the array when it is non-empty.
 helm upgrade --install "${RELEASE}" "${CHART_REF}" \
-  "${HELM_VERSION_FLAG[@]}" \
+  ${HELM_VERSION_FLAG[@]+"${HELM_VERSION_FLAG[@]}"} \
   --namespace "${NAMESPACE}" \
   -f "${VALUES_FILE}" \
   --set "global.domain.name=${DOMAIN}" \
