@@ -274,30 +274,20 @@ if [[ -n "${CHART_PATH}" ]]; then
   log_info "Applying local templates from ${CHART_PATH}/templates/ ..."
   cp -r "${CHART_PATH}/templates/." "${CHART_BASE}/templates/"
 
-  # Re-package each subchart that has a local file:// source, overlaying the
-  # local templates/ onto the downloaded tarball.  This ensures local changes
-  # to subchart templates are used even when helm-chart/charts/ is not built.
-  # Parses the file:// dependency paths from Chart.yaml.in.
+  # Overlay local subchart templates onto the downloaded OCI chart.
+  # The published OCI chart vendors subcharts as extracted directories
+  # (not tarballs), so we can cp -r directly.  Parses file:// dependency
+  # paths from Chart.yaml.in to find the local source for each subchart.
   local_chart_yaml_in="${CHART_PATH}/Chart.yaml.in"
   if [[ -f "${local_chart_yaml_in}" ]]; then
-    _sc_work="${PATCHED_DIR}/subcharts"
-    mkdir -p "${_sc_work}"
     # Extract name→relative-path pairs: "self-hosted-hub ../self_hosted_hub/helm"
     while read -r _sc_name _sc_relpath; do
       _local_src="$(realpath "${CHART_PATH}/${_sc_relpath}")"
       [[ -d "${_local_src}/templates" ]] || continue
-      # Find the matching vendored tarball (name may differ in version suffix)
-      _sc_tarball=$(find "${CHART_BASE}/charts" -maxdepth 1 -name "${_sc_name}-*.tgz" 2>/dev/null | head -1 || true)
-      [[ -n "${_sc_tarball}" ]] || continue
-      log_info "  Re-packaging subchart ${_sc_name} with local templates..."
-      _sc_extract="${_sc_work}/${_sc_name}"
-      mkdir -p "${_sc_extract}"
-      tar -xzf "${_sc_tarball}" -C "${_sc_extract}"
-      cp -r "${_local_src}/templates/." "${_sc_extract}/${_sc_name}/templates/"
-      # helm package writes <name>-<version>.tgz; remove old tarball first
-      rm -f "${_sc_tarball}"
-      helm package "${_sc_extract}/${_sc_name}" --destination "${CHART_BASE}/charts/" \
-        > /dev/null
+      _sc_dir="${CHART_BASE}/charts/${_sc_name}"
+      [[ -d "${_sc_dir}" ]] || continue
+      log_info "  Overlaying local templates onto subchart ${_sc_name}..."
+      cp -r "${_local_src}/templates/." "${_sc_dir}/templates/"
     done < <(awk '
       /- name:/ { name=$3 }
       /repository:.*file:\/\// {
@@ -329,7 +319,7 @@ if [[ -n "${CHART_PATH}" ]]; then
     || die "Failed to patch emissary-ingress condition into ${CHART_BASE}/Chart.yaml — aborting to avoid broken install"
 
   CHART_REF="${CHART_BASE}"
-  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates + re-packaged subcharts"
+  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates + local subchart templates"
   HELM_VERSION_FLAG=()
 else
   CHART_REF="${SEMAPHORE_CHART_OCI}"
