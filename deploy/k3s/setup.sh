@@ -312,8 +312,16 @@ fi
 HELM_STATUS="$(helm status "${RELEASE}" -n "${NAMESPACE}" 2>/dev/null \
   | awk '/^STATUS:/{print $2}' || true)"
 if [[ "${HELM_STATUS}" == failed || "${HELM_STATUS}" == pending* ]]; then
-  log_warn "Found a ${HELM_STATUS} Helm release '${RELEASE}' — uninstalling stale release before fresh install..."
-  helm uninstall "${RELEASE}" -n "${NAMESPACE}" || true
+  log_warn "Found a ${HELM_STATUS} Helm release '${RELEASE}' — removing stale release manifest before fresh install..."
+  # helm uninstall itself fails when the stored manifest contains resources
+  # whose CRD types are no longer installed (it cannot build those objects
+  # to delete them).  Delete the Helm release secrets directly instead —
+  # this clears the stored manifest without touching Kubernetes objects,
+  # so the next helm upgrade --install runs as a fresh install.
+  kubectl delete secret \
+    -n "${NAMESPACE}" \
+    -l "owner=helm,name=${RELEASE}" \
+    2>/dev/null || true
 fi
 
 log_info "  Domain        : ${DOMAIN}"
