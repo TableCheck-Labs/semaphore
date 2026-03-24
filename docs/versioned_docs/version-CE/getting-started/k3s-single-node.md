@@ -316,10 +316,6 @@ published to the OCI registry, use `--chart-path` to install from the local char
 instead:
 
 ```shell title="Install from a local chart build"
-# First build the Helm dependencies (downloads subcharts into helm-chart/charts/)
-helm dependency build helm-chart/
-
-# Then run the setup script pointing at the local chart
 sudo --preserve-env ./deploy/k3s/setup.sh \
     --domain ci.example.com \
     --ip    203.0.113.10 \
@@ -328,7 +324,12 @@ sudo --preserve-env ./deploy/k3s/setup.sh \
     --chart-path ./helm-chart
 ```
 
-When `--chart-path` is set, `--chart-version` is ignored and no OCI pull is performed.
+When `--chart-path` is set the script automatically:
+- Generates `Chart.yaml` from `Chart.yaml.in` (substituting the version placeholder with `0.0.0-dev`)
+- Copies `values.yaml.in` to `values.yaml` if absent
+- Runs `helm dependency build` to download subcharts
+
+`--chart-version` is ignored when `--chart-path` is set.
 
 :::
 
