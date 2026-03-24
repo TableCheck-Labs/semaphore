@@ -274,12 +274,36 @@ if [[ -n "${CHART_PATH}" ]]; then
   log_info "Applying local templates from ${CHART_PATH}/templates/ ..."
   cp -r "${CHART_PATH}/templates/." "${CHART_BASE}/templates/"
 
-  # Replace vendored subchart tarballs with local versions so that local
-  # subchart changes (e.g. new env vars in self-hosted-hub) are used instead
-  # of the older versions bundled in the published OCI chart.
-  if [[ -d "${CHART_PATH}/charts" ]]; then
-    log_info "Replacing vendored subcharts with local versions from ${CHART_PATH}/charts/ ..."
-    cp "${CHART_PATH}/charts/"*.tgz "${CHART_BASE}/charts/"
+  # Re-package each subchart that has a local file:// source, overlaying the
+  # local templates/ onto the downloaded tarball.  This ensures local changes
+  # to subchart templates are used even when helm-chart/charts/ is not built.
+  # Parses the file:// dependency paths from Chart.yaml.in.
+  local_chart_yaml_in="${CHART_PATH}/Chart.yaml.in"
+  if [[ -f "${local_chart_yaml_in}" ]]; then
+    _sc_work="${PATCHED_DIR}/subcharts"
+    mkdir -p "${_sc_work}"
+    # Extract name→relative-path pairs: "self-hosted-hub ../self_hosted_hub/helm"
+    while read -r _sc_name _sc_relpath; do
+      _local_src="$(realpath "${CHART_PATH}/${_sc_relpath}")"
+      [[ -d "${_local_src}/templates" ]] || continue
+      # Find the matching vendored tarball (name may differ in version suffix)
+      _sc_tarball=$(find "${CHART_BASE}/charts" -maxdepth 1 -name "${_sc_name}-*.tgz" 2>/dev/null | head -1 || true)
+      [[ -n "${_sc_tarball}" ]] || continue
+      log_info "  Re-packaging subchart ${_sc_name} with local templates..."
+      _sc_extract="${_sc_work}/${_sc_name}"
+      mkdir -p "${_sc_extract}"
+      tar -xzf "${_sc_tarball}" -C "${_sc_extract}"
+      cp -r "${_local_src}/templates/." "${_sc_extract}/${_sc_name}/templates/"
+      # helm package writes <name>-<version>.tgz; remove old tarball first
+      rm -f "${_sc_tarball}"
+      helm package "${_sc_extract}/${_sc_name}" --destination "${CHART_BASE}/charts/" \
+        > /dev/null
+    done < <(awk '
+      /- name:/ { name=$3 }
+      /repository:.*file:\/\// {
+        gsub(/["'\'']/,""); gsub(/file:\/\//,"",$2); print name, $2
+      }
+    ' "${local_chart_yaml_in}")
   fi
 
   # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
@@ -305,7 +329,7 @@ if [[ -n "${CHART_PATH}" ]]; then
     || die "Failed to patch emissary-ingress condition into ${CHART_BASE}/Chart.yaml — aborting to avoid broken install"
 
   CHART_REF="${CHART_BASE}"
-  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates + local subcharts"
+  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates + re-packaged subcharts"
   HELM_VERSION_FLAG=()
 else
   CHART_REF="${SEMAPHORE_CHART_OCI}"
