@@ -328,7 +328,7 @@ if [[ "${HELM_STATUS}" == failed || "${HELM_STATUS}" == pending* ]]; then
   kubectl delete secret \
     -n "${NAMESPACE}" \
     -l "owner=helm,name=${RELEASE}" \
-    2>/dev/null || true
+    --ignore-not-found
 fi
 
 log_info "  Domain        : ${DOMAIN}"
