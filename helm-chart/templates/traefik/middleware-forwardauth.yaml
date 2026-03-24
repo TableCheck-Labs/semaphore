@@ -16,5 +16,4 @@ spec:
       - x-semaphore-user-anonymous
       - set-cookie
     trustForwardHeader: true
-    requestTimeout: 5s
 {{- end }}
