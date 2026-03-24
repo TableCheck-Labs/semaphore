@@ -305,10 +305,12 @@ fi
 # build those objects even if the new templates no longer emit them, causing:
 #   "unable to build kubernetes objects from release manifest: no matches for kind X"
 # Uninstall the stale release first so the next run starts from a clean slate.
-# grep exits 1 (no match) when there is no existing release; || true prevents
-# that from aborting the script under set -eo pipefail.
-HELM_STATUS="$(helm status "${RELEASE}" -n "${NAMESPACE}" -o json 2>/dev/null \
-  | grep -o '"status":"[^"]*"' | head -1 | sed 's/"status":"//;s/"//' || true)"
+# Use plain-text `helm status` (not -o json) to avoid matching against
+# pretty-printed JSON spacing ("status": vs "status":).  The STATUS: line
+# in plain output is stable across Helm versions.
+# || true: helm status exits 1 when no release exists; prevent set -e abort.
+HELM_STATUS="$(helm status "${RELEASE}" -n "${NAMESPACE}" 2>/dev/null \
+  | awk '/^STATUS:/{print $2}' || true)"
 if [[ "${HELM_STATUS}" == failed || "${HELM_STATUS}" == pending* ]]; then
   log_warn "Found a ${HELM_STATUS} Helm release '${RELEASE}' — uninstalling stale release before fresh install..."
   helm uninstall "${RELEASE}" -n "${NAMESPACE}" || true
