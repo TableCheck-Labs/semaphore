@@ -15,6 +15,13 @@ spec:
     secretName: {{ $ssl.secretName | required "ingress.ssl.secretName is required when ingress.ssl.type is 'custom'." }}
 {{- end }}
   routes:
+    # All id.* routes bypass ForwardAuth — the auth domain handles authentication
+    # directly via session cookies.  Traefik's ForwardAuth sub-request uses
+    # Host: auth.<ns>:4000, which prevents the auth service's host: "id." Plug
+    # route from matching, causing it to fall through to the org catch-all and
+    # return a 302 redirect instead of 200, producing a /login ↔ / redirect loop.
+    # This matches Emissary's bypass_auth: true on the root catch-all route.
+
     # /oidc — guard-id-http-api
     - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/oidc`)
       kind: Rule
@@ -24,7 +31,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /blocked — guard-id-http-api
@@ -36,7 +42,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /login — guard-id-http-api
@@ -48,7 +53,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /logout — guard-id-http-api
@@ -60,7 +64,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /signup — guard-id-http-api
@@ -72,7 +75,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /github_app_manifest — guard-instance-config
@@ -84,7 +86,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /realms — keycloak
@@ -96,7 +97,6 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
     # /resources — keycloak
@@ -108,10 +108,9 @@ spec:
           port: 80
           serversTransport: timeout-30s
       middlewares:
-        - name: semaphore-forwardauth
         - name: retry-connect-3
 
-    # / — guard-id-http-api catch-all (bypass_auth: no ForwardAuth middleware)
+    # / — guard-id-http-api catch-all
     - match: Host(`id.{{ $domainName }}`) && PathPrefix(`/`)
       kind: Rule
       services:

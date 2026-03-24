@@ -625,14 +625,16 @@ else
             pass "T-RENDER-14  ingressroute-storage.yaml does NOT have semaphore-forwardauth (bypass_auth — correct)"
         fi
 
-        # T-RENDER-15: id.* catch-all / route must NOT have forwardauth middleware.
-        # Check the source template directly — the catch-all route at the end of
-        # ingressroute-id.yaml must have no middlewares section (bypass_auth: true).
-        ID_CATCHALL=$(awk '/bypass_auth: no ForwardAuth/{found=1} found{print} /^    - match:/{if(found && NR>1){exit}}' helm-chart/templates/traefik/ingressroute-id.yaml)
-        if echo "${ID_CATCHALL}" | grep -q 'semaphore-forwardauth'; then
-            fail "T-RENDER-15  id.* catch-all route in ingressroute-id.yaml has semaphore-forwardauth — bypass_auth route, causes redirect loops"
+        # T-RENDER-15: NO route in ingressroute-id.yaml may have semaphore-forwardauth.
+        # Traefik ForwardAuth sends sub-requests with Host: auth.<ns>:4000 — the auth
+        # service's host: "id." Plug route never matches, causing a /login<->/  loop.
+        # All id.* routes bypass ForwardAuth (the auth domain handles auth via cookies).
+        ID_IR=$(awk '/name: semaphore-id/{found=1} found{print} found && /^---/{exit}' \
+            helm-chart/templates/traefik/ingressroute-id.yaml)
+        if echo "${ID_IR}" | grep -q 'semaphore-forwardauth'; then
+            fail "T-RENDER-15  semaphore-id IngressRoute has semaphore-forwardauth — causes /login redirect loop on id.* subdomain"
         else
-            pass "T-RENDER-15  id.* catch-all route does NOT have semaphore-forwardauth (bypass_auth — correct)"
+            pass "T-RENDER-15  id.* IngressRoute has no semaphore-forwardauth (auth domain bypasses ForwardAuth — correct)"
         fi
 
         # T-RENDER-16: no Emissary API group (apiVersion: getambassador.io/...) in rendered YAML.
