@@ -325,11 +325,13 @@ sudo --preserve-env ./deploy/k3s/setup.sh \
 ```
 
 When `--chart-path` is set the script automatically:
-- Generates `Chart.yaml` from `Chart.yaml.in` (substituting the version placeholder with `0.0.0-dev`)
-- Copies `values.yaml.in` to `values.yaml` if absent
-- Runs `helm dependency build` to download subcharts
+1. Pulls the published OCI chart (`--chart-version`, default `v1.5.0`) to a temp directory — this gives a fully vendored chart with all subchart dependencies already bundled
+2. Overlays the `templates/` directory from `--chart-path` on top of the pulled chart
+3. Patches the pulled `Chart.yaml` to add `condition: emissary-ingress.enabled` so the k3s values file can disable the Emissary subchart
 
-`--chart-version` is ignored when `--chart-path` is set.
+This approach requires no `yq`, `jq`, or monorepo tooling on the target machine — only `helm` and internet access to pull the base chart.
+
+`--chart-version` still controls which base chart is pulled; omit it to use the default.
 
 :::
 

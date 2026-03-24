@@ -350,10 +350,13 @@ else
 fi
 
 # T-SCRIPT-15: no emissary CRD pre-install step in setup script (traefik-native, no CRD pre-install needed)
-if ! grep -q 'emissary' "${SETUP_SCRIPT}"; then
-    pass "T-SCRIPT-15  no emissary references in setup script (Traefik-native routing, no CRD pre-install)"
+# We check for the specific CRD install pattern (EMISSARY_CRD_URL / kubectl apply emissary),
+# not bare 'emissary' — the script legitimately references 'emissary-ingress.enabled' when
+# patching the pulled OCI chart's Chart.yaml to add the Helm subchart condition.
+if ! grep -qE 'EMISSARY_CRD_URL|kubectl apply.*emissary' "${SETUP_SCRIPT}"; then
+    pass "T-SCRIPT-15  no emissary CRD pre-install step in setup script (Traefik-native routing)"
 else
-    fail "T-SCRIPT-15  emissary references found in setup script — remove emissary CRD pre-install steps"
+    fail "T-SCRIPT-15  emissary CRD pre-install step found in setup script — remove it (Traefik-native routing needs no CRD pre-install)"
 fi
 
 # T-SCRIPT-16: --set-string used for TLS cert and key (prevents Helm type coercion)

@@ -249,37 +249,49 @@ if [[ -n "${CHART_PATH}" ]]; then
   [[ -d "${CHART_PATH}" ]] \
     || die "Chart path does not exist or is not a directory: ${CHART_PATH}"
 
-  # Prepare Chart.yaml and values.yaml from their *.in sources when absent.
-  # prepare-chart.sh requires yq/jq and full monorepo context; for local
-  # installs we apply only the minimal substitution helm needs (the version
-  # placeholder) and copy values.yaml.in verbatim.
-  if [[ ! -f "${CHART_PATH}/Chart.yaml" ]]; then
-    if [[ -f "${CHART_PATH}/Chart.yaml.in" ]]; then
-      log_info "Chart.yaml not found — generating from Chart.yaml.in (dev build)..."
-      sed 's/@chartVersion@/0.0.0-dev/g' "${CHART_PATH}/Chart.yaml.in" \
-        > "${CHART_PATH}/Chart.yaml"
-    else
-      die "No Chart.yaml or Chart.yaml.in found in ${CHART_PATH}"
-    fi
-  fi
+  # The monorepo chart directory uses file:// sub-chart dependencies that require
+  # every service to have a generated Chart.yaml — not available on a fresh clone.
+  # Strategy: pull the published OCI chart (all deps already vendored), then
+  # overlay templates/ from the local path and patch Chart.yaml to add the
+  # emissary-ingress condition.  This gives us a fully functional chart directory
+  # without needing to run prepare-chart.sh or yq/jq.
+  PATCHED_DIR="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '${PATCHED_DIR}'" EXIT
 
-  if [[ ! -f "${CHART_PATH}/values.yaml" ]]; then
-    if [[ -f "${CHART_PATH}/values.yaml.in" ]]; then
-      log_info "values.yaml not found — copying from values.yaml.in (dev build)..."
-      cp "${CHART_PATH}/values.yaml.in" "${CHART_PATH}/values.yaml"
-    else
-      die "No values.yaml or values.yaml.in found in ${CHART_PATH}"
-    fi
-  fi
+  log_info "Pulling base chart ${SEMAPHORE_CHART_OCI} ${CHART_VERSION} for template patching..."
+  helm pull "${SEMAPHORE_CHART_OCI}" \
+    --version "${CHART_VERSION}" \
+    --untar \
+    --untardir "${PATCHED_DIR}"
 
-  # Download subchart dependencies if not already present.
-  if [[ ! -d "${CHART_PATH}/charts" ]] || [[ -z "$(ls -A "${CHART_PATH}/charts" 2>/dev/null)" ]]; then
-    log_info "Running helm dependency build in ${CHART_PATH}..."
-    helm dependency build "${CHART_PATH}"
-  fi
+  CHART_BASE="${PATCHED_DIR}/semaphore"
 
-  CHART_REF="${CHART_PATH}"
-  log_info "  Chart         : local path ${CHART_PATH} (OCI reference overridden)"
+  [[ -d "${CHART_BASE}" ]] \
+    || die "helm pull succeeded but chart directory '${PATCHED_DIR}/semaphore' not found"
+
+  # Overlay templates from the local chart path.
+  log_info "Applying local templates from ${CHART_PATH}/templates/ ..."
+  cp -r "${CHART_PATH}/templates/." "${CHART_BASE}/templates/"
+
+  # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
+  # emissary-ingress dependency so that setting enabled: false in values
+  # disables the subchart.  awk inserts the condition line after the
+  # 'repository:' line for that dependency (all indented 4 spaces).
+  awk '
+    /^  - name: emissary-ingress/ { in_dep=1 }
+    in_dep && /^    repository:/ {
+      print
+      print "    condition: emissary-ingress.enabled"
+      in_dep=0
+      next
+    }
+    { print }
+  ' "${CHART_BASE}/Chart.yaml" > "${CHART_BASE}/Chart.yaml.tmp"
+  mv "${CHART_BASE}/Chart.yaml.tmp" "${CHART_BASE}/Chart.yaml"
+
+  CHART_REF="${CHART_BASE}"
+  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates"
   HELM_VERSION_FLAG=()
 else
   CHART_REF="${SEMAPHORE_CHART_OCI}"
