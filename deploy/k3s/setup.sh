@@ -274,6 +274,14 @@ if [[ -n "${CHART_PATH}" ]]; then
   log_info "Applying local templates from ${CHART_PATH}/templates/ ..."
   cp -r "${CHART_PATH}/templates/." "${CHART_BASE}/templates/"
 
+  # Replace vendored subchart tarballs with local versions so that local
+  # subchart changes (e.g. new env vars in self-hosted-hub) are used instead
+  # of the older versions bundled in the published OCI chart.
+  if [[ -d "${CHART_PATH}/charts" ]]; then
+    log_info "Replacing vendored subcharts with local versions from ${CHART_PATH}/charts/ ..."
+    cp "${CHART_PATH}/charts/"*.tgz "${CHART_BASE}/charts/"
+  fi
+
   # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
   # emissary-ingress dependency so that setting enabled: false in k3s values
   # disables the subchart.  Idempotent — skips if condition already present.
@@ -297,7 +305,7 @@ if [[ -n "${CHART_PATH}" ]]; then
     || die "Failed to patch emissary-ingress condition into ${CHART_BASE}/Chart.yaml — aborting to avoid broken install"
 
   CHART_REF="${CHART_BASE}"
-  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates"
+  log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates + local subcharts"
   HELM_VERSION_FLAG=()
 else
   CHART_REF="${SEMAPHORE_CHART_OCI}"
