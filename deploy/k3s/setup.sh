@@ -299,6 +299,19 @@ else
   HELM_VERSION_FLAG=(--version "${CHART_VERSION}")
 fi
 
+# If a previous install attempt left a failed or pending-* release, the stored
+# manifest may reference CRD resources that no longer exist (e.g. Emissary types
+# from an earlier run with the unguarded chart).  Helm's three-way merge cannot
+# build those objects even if the new templates no longer emit them, causing:
+#   "unable to build kubernetes objects from release manifest: no matches for kind X"
+# Uninstall the stale release first so the next run starts from a clean slate.
+HELM_STATUS="$(helm status "${RELEASE}" -n "${NAMESPACE}" -o json 2>/dev/null \
+  | grep -o '"status":"[^"]*"' | head -1 | sed 's/"status":"//;s/"//')"
+if [[ "${HELM_STATUS}" == failed || "${HELM_STATUS}" == pending* ]]; then
+  log_warn "Found a ${HELM_STATUS} Helm release '${RELEASE}' — uninstalling stale release before fresh install..."
+  helm uninstall "${RELEASE}" -n "${NAMESPACE}" || true
+fi
+
 log_info "  Domain        : ${DOMAIN}"
 log_info "  IP            : ${IP}"
 log_info "  Admin email   : ${EMAIL}"
