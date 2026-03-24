@@ -275,20 +275,27 @@ if [[ -n "${CHART_PATH}" ]]; then
   cp -r "${CHART_PATH}/templates/." "${CHART_BASE}/templates/"
 
   # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
-  # emissary-ingress dependency so that setting enabled: false in values
-  # disables the subchart.  awk inserts the condition line after the
-  # 'repository:' line for that dependency (all indented 4 spaces).
+  # emissary-ingress dependency so that setting enabled: false in k3s values
+  # disables the subchart.  The awk is idempotent — it only inserts the
+  # condition line when it is not already present for that dependency.
   awk '
-    /^  - name: emissary-ingress/ { in_dep=1 }
+    /^  - name: emissary-ingress/ { in_dep=1; has_cond=0 }
+    in_dep && /^    condition:/ { has_cond=1 }
     in_dep && /^    repository:/ {
       print
-      print "    condition: emissary-ingress.enabled"
+      if (!has_cond) print "    condition: emissary-ingress.enabled"
       in_dep=0
       next
     }
+    in_dep && /^  - / { in_dep=0 }
     { print }
   ' "${CHART_BASE}/Chart.yaml" > "${CHART_BASE}/Chart.yaml.tmp"
   mv "${CHART_BASE}/Chart.yaml.tmp" "${CHART_BASE}/Chart.yaml"
+
+  # Verify the condition was written — a silent awk miss would leave the
+  # emissary subchart enabled, causing "no matches for kind Module" on install.
+  grep -q 'condition: emissary-ingress.enabled' "${CHART_BASE}/Chart.yaml" \
+    || die "Failed to patch emissary-ingress condition into ${CHART_BASE}/Chart.yaml — aborting to avoid broken install"
 
   CHART_REF="${CHART_BASE}"
   log_info "  Chart         : patched OCI ${CHART_VERSION} + local templates"
