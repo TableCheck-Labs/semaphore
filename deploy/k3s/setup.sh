@@ -13,8 +13,11 @@
 #   -k, --key  FILE         Path to TLS private-key PEM           (env: SEMAPHORE_KEY)
 #       --chart-version VER Semaphore chart version to install    (env: SEMAPHORE_CHART_VERSION)
 #                           (default: v1.5.0)
+#       --chart-path  PATH  Path to a local Helm chart directory  (env: SEMAPHORE_CHART_PATH)
+#                           Overrides --chart-version and the OCI reference.
+#                           Run `helm dependency build <PATH>` before using this flag.
 #       --k3s-version VER   k3s version to install                (env: SEMAPHORE_K3S_VERSION)
-#                           (default: v1.31.4+k3s1)
+#                           (default: v1.32.13+k3s1)
 #       --helm-version VER  Helm version to install               (env: SEMAPHORE_HELM_VERSION)
 #                           (default: v3.17.1)
 #       --namespace NS      Kubernetes namespace                   (default: semaphore)
@@ -105,6 +108,7 @@ ADMIN_NAME="${SEMAPHORE_NAME:-}"
 CERT_FILE="${SEMAPHORE_CERT:-}"
 KEY_FILE="${SEMAPHORE_KEY:-}"
 CHART_VERSION="${SEMAPHORE_CHART_VERSION:-${DEFAULT_CHART_VERSION}}"
+CHART_PATH="${SEMAPHORE_CHART_PATH:-}"
 K3S_VERSION="${SEMAPHORE_K3S_VERSION:-${DEFAULT_K3S_VERSION}}"
 HELM_VERSION="${SEMAPHORE_HELM_VERSION:-${DEFAULT_HELM_VERSION}}"
 NAMESPACE="${DEFAULT_NAMESPACE}"
@@ -121,6 +125,7 @@ while [[ $# -gt 0 ]]; do
     -c|--cert)          CERT_FILE="$2";     shift 2 ;;
     -k|--key)           KEY_FILE="$2";      shift 2 ;;
     --chart-version)    CHART_VERSION="$2"; shift 2 ;;
+    --chart-path)       CHART_PATH="$2";    shift 2 ;;
     --k3s-version)      K3S_VERSION="$2";   shift 2 ;;
     --helm-version)     HELM_VERSION="$2";  shift 2 ;;
     --namespace)        NAMESPACE="$2";     shift 2 ;;
@@ -238,15 +243,28 @@ TLS_KEY="$(base64 < "${KEY_FILE}"  | tr -d '\n')"
 log_info "Deploying Semaphore CE..."
 log_info "  Release       : ${RELEASE}"
 log_info "  Namespace     : ${NAMESPACE}"
-log_info "  Chart version : ${CHART_VERSION}"
+
+# Resolve chart reference: local path overrides OCI + version.
+if [[ -n "${CHART_PATH}" ]]; then
+  [[ -d "${CHART_PATH}" ]] \
+    || die "Chart path does not exist or is not a directory: ${CHART_PATH}"
+  CHART_REF="${CHART_PATH}"
+  log_info "  Chart         : local path ${CHART_PATH} (OCI reference overridden)"
+  HELM_VERSION_FLAG=()
+else
+  CHART_REF="${SEMAPHORE_CHART_OCI}"
+  log_info "  Chart version : ${CHART_VERSION}"
+  HELM_VERSION_FLAG=(--version "${CHART_VERSION}")
+fi
+
 log_info "  Domain        : ${DOMAIN}"
 log_info "  IP            : ${IP}"
 log_info "  Admin email   : ${EMAIL}"
 log_info "  Admin name    : ${ADMIN_NAME}"
 log_info "  Values file   : ${VALUES_FILE}"
 
-helm upgrade --install "${RELEASE}" "${SEMAPHORE_CHART_OCI}" \
-  --version "${CHART_VERSION}" \
+helm upgrade --install "${RELEASE}" "${CHART_REF}" \
+  "${HELM_VERSION_FLAG[@]}" \
   --namespace "${NAMESPACE}" \
   -f "${VALUES_FILE}" \
   --set "global.domain.name=${DOMAIN}" \
