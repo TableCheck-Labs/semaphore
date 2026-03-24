@@ -276,25 +276,23 @@ if [[ -n "${CHART_PATH}" ]]; then
 
   # Patch Chart.yaml: add 'condition: emissary-ingress.enabled' to the
   # emissary-ingress dependency so that setting enabled: false in k3s values
-  # disables the subchart.  The awk is indentation-agnostic (captures the
-  # actual leading whitespace from the repository: line so it works regardless
-  # of how yq reformatted the file) and idempotent (skips if already present).
-  awk '
-    /- name:[[:space:]]+emissary-ingress/ { in_dep=1; has_cond=0; dep_indent=""; print; next }
-    in_dep && dep_indent=="" { match($0, /^[[:space:]]*/); dep_indent=substr($0, 1, RLENGTH) }
-    in_dep && /condition:/ { has_cond=1 }
-    in_dep && /- name:/ {
-      if (!has_cond) print dep_indent "condition: emissary-ingress.enabled"
-      in_dep=0; print; next
-    }
-    in_dep { print; next }
-    { print }
-    END { if (in_dep && !has_cond && dep_indent!="") print dep_indent "condition: emissary-ingress.enabled" }
-  ' "${CHART_BASE}/Chart.yaml" > "${CHART_BASE}/Chart.yaml.tmp"
-  mv "${CHART_BASE}/Chart.yaml.tmp" "${CHART_BASE}/Chart.yaml"
+  # disables the subchart.  Idempotent — skips if condition already present.
+  # Uses the unique getambassador.io repository URL as the anchor; captures
+  # leading whitespace from that line to match indentation exactly, then
+  # appends the condition line after it via GNU sed.
+  if ! grep -q 'condition: emissary-ingress.enabled' "${CHART_BASE}/Chart.yaml"; then
+    _repo_line=$(grep 'repository: https://app.getambassador.io' "${CHART_BASE}/Chart.yaml" || true)
+    if [[ -z "${_repo_line}" ]]; then
+      log_warn "emissary-ingress dependency block in downloaded Chart.yaml (for diagnosis):"
+      grep -B2 -A6 'emissary' "${CHART_BASE}/Chart.yaml" >&2 || true
+      die "Cannot find 'repository: https://app.getambassador.io' in Chart.yaml — cannot patch condition"
+    fi
+    _indent=$(printf '%s' "${_repo_line}" | sed 's/repository:.*//')
+    sed -i "s|repository: https://app.getambassador.io|&\n${_indent}condition: emissary-ingress.enabled|" \
+      "${CHART_BASE}/Chart.yaml"
+  fi
 
-  # Verify the condition was written — a silent awk miss would leave the
-  # emissary subchart enabled, causing "no matches for kind Module" on install.
+  # Verify the condition is present — belt-and-suspenders after the sed.
   grep -q 'condition: emissary-ingress.enabled' "${CHART_BASE}/Chart.yaml" \
     || die "Failed to patch emissary-ingress condition into ${CHART_BASE}/Chart.yaml — aborting to avoid broken install"
 
