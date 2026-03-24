@@ -309,6 +309,29 @@ the script with `sudo --preserve-env`:
 
 The script accepts flags and equivalent environment variables. Flags take precedence.
 
+:::note Testing unreleased chart changes
+
+If you are testing a branch of this repository whose Helm chart changes have not yet been
+published to the OCI registry, use `--chart-path` to install from the local chart directory
+instead:
+
+```shell title="Install from a local chart build"
+# First build the Helm dependencies (downloads subcharts into helm-chart/charts/)
+helm dependency build helm-chart/
+
+# Then run the setup script pointing at the local chart
+sudo --preserve-env ./deploy/k3s/setup.sh \
+    --domain ci.example.com \
+    --ip    203.0.113.10 \
+    --email admin@example.com \
+    --name  "CI Admin" \
+    --chart-path ./helm-chart
+```
+
+When `--chart-path` is set, `--chart-version` is ignored and no OCI pull is performed.
+
+:::
+
 | Flag | Environment variable | Required | Description |
 |---|---|---|---|
 | `--domain DOMAIN` | `SEMAPHORE_DOMAIN` | Yes | Base domain for Semaphore (e.g. `ci.example.com`) |
@@ -318,6 +341,7 @@ The script accepts flags and equivalent environment variables. Flags take preced
 | `--cert FILE` | `SEMAPHORE_CERT` | Yes | Path to TLS full-chain PEM file |
 | `--key FILE` | `SEMAPHORE_KEY` | Yes | Path to TLS private-key PEM file |
 | `--chart-version VER` | `SEMAPHORE_CHART_VERSION` | No | Chart version to install (default: `v1.5.0`) |
+| `--chart-path PATH` | `SEMAPHORE_CHART_PATH` | No | Path to a local Helm chart directory — overrides `--chart-version` and the OCI reference. Run `helm dependency build <PATH>` before using this flag |
 | `--k3s-version VER` | `SEMAPHORE_K3S_VERSION` | No | k3s version to install (default: `v1.32.13+k3s1`) |
 | `--helm-version VER` | `SEMAPHORE_HELM_VERSION` | No | Helm version to install (default: `v3.17.1`) |
 | `--namespace NS` | — | No | Kubernetes namespace (default: `semaphore`) |
